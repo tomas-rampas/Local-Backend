@@ -73,7 +73,7 @@ docker-compose ps
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `REGISTRY_PREFIX` | `ghcr.io/tomas-rampas` | Docker registry prefix for images |
+| `REGISTRY_PREFIX` | `ghcr.io/${GIT_HUB_USER}` | Docker registry prefix for images |
 | `IMAGE_TAG` | `latest` | Version tag for Docker images |
 | `LOCAL_BACKEND_BOOTSTRAP_PASSWORD` | - | Master password for Elasticsearch and other services |
 
