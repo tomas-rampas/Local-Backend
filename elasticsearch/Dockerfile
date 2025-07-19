@@ -4,7 +4,7 @@ FROM redhat/ubi8:latest
 ARG CERT_DIR
 
 RUN dnf update -y && \
-    dnf install -y wget rpm
+    dnf install -y wget rpm curl
 
 RUN rpm --import https://artifacts.elastic.co/GPG-KEY-elasticsearch && \
     cat <<EOF > /etc/yum.repos.d/elasticsearch.repo
@@ -60,4 +60,3 @@ RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keysto
 RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keystore add bootstrap.password -x
 
 CMD ["/bin/sh", "-c", "/usr/local/bin/generate-token.sh && /usr/share/elasticsearch/bin/elasticsearch"]
-

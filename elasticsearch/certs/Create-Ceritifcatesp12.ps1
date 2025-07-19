@@ -47,3 +47,17 @@ Write-Host " - ca.crt (CA certificate)"
 Write-Host " - elasticsearch.p12"
 Write-Host " - elasticsearch_with_ca.p12 (includes CA)"
 Write-Host " - kibana.p12"
+
+# Install CA certificate to local machine's Trusted Root Certification Authorities
+Write-Host ""
+$installResult = & "$PSScriptRoot\Install-CACertificate.ps1" -CaCertPath "$(Get-Location)\ca.crt" -CaCn $CaCn
+
+Write-Host ""
+Write-Host "Certificate installation complete!"
+Write-Host ""
+Write-Host "Usage instructions:"
+Write-Host "- Elasticsearch: https://localhost:9200 (user: elastic, password: $CertPass)"
+Write-Host "- Kibana: http://localhost:5601"
+Write-Host ""
+Write-Host "To remove the CA certificate later, run:"
+Write-Host "Get-ChildItem -Path 'Cert:\LocalMachine\Root' | Where-Object {`$_.Subject -like '*$CaCn*'} | Remove-Item"

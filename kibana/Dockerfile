@@ -39,7 +39,8 @@ USER kibana
 
 ARG KIBANA_PASSWORD
 
-RUN echo "$KIBANA_PASSWORD" | /usr/share/kibana/bin/kibana-keystore add server.ssl.keystore.password -x
+# SSL is disabled, so we don't need to set the keystore password
+# RUN echo "$KIBANA_PASSWORD" | /usr/share/kibana/bin/kibana-keystore add server.ssl.keystore.password -x
 
 
 CMD ["/usr/local/bin/kibana-entrypoint.sh"]
