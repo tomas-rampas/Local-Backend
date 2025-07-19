@@ -1,1 +1,15 @@
+# Ignore .env file with sensitive information
 /.env
+
+# Ignore all Elasticsearch logs
+elasticsearch/logs/*
+!elasticsearch/logs/.gitkeep
+elasticsearch/data/*
+!elasticsearch/data/.gitkeep
+
+kafka/logs/**
+kafka/data/**
+zookeeper/logs/**
+zookeeper/data/**
+mongodb/data/**
+

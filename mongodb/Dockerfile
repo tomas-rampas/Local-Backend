@@ -13,10 +13,25 @@ enabled=1
 gpgkey=https://www.mongodb.org/static/pgp/server-6.0.asc
 EOF
 
-RUN dnf install -y mongodb-org-server
+# Install MongoDB and create required directories
+RUN dnf install -y mongodb-org && \
+    mkdir -p /data/db /data/configdb && \
+    chown -R 999:999 /data/db /data/configdb
 
-RUN systemctl enable mongod
+# Remove the systemctl line since it won't work in Docker
 
+# Set up a non-root user (MongoDB's default is 999)
+RUN useradd -u 999 -r -g 999 -s /sbin/nologin mongodb || echo "User mongodb already exists"
+
+# MongoDB data volume
+VOLUME ["/data/db", "/data/configdb"]
+
+# MongoDB port
 EXPOSE 27017
 
+# Set entrypoint to mongod binary
+# ENTRYPOINT ["mongod"]
 CMD ["/usr/bin/mongod", "--bind_ip_all"]
+
+# Default command (can be overridden by docker-compose.yml)
+# CMD ["--bind_ip_all"]

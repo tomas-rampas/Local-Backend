@@ -4,17 +4,22 @@
 services:
   elasticsearch:    
     container_name: artemis-elasticsearch
+    networks:
+      artemis-network:
+        aliases: 
+          - elasticsearch
+          - artemis-elasticsearch
     build:
       context: ./elasticsearch
       args:
         CERT_DIR: /certs
-        ELASTIC_PASSWORD: ${ELASTIC_BOOTSTRAP_PASSWORD}
+        ELASTIC_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
     ports:
       - "9200:9200"
       - "9300:9300"
     environment:
       # Node and cluster configuration
-      ELASTIC_PASSWORD: ${ELASTIC_BOOTSTRAP_PASSWORD}
+      ELASTIC_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
     volumes:
       - ./elasticsearch/data:/usr/share/elasticsearch/data # Persist data on host
       - ./elasticsearch/logs:/var/log/elasticsearch # Persist logs on host      
@@ -23,7 +28,7 @@ services:
           # Test command needs adjustment based on your auth & cert setup
           # If ELASTIC_PASSWORD is set, use it. If not, ES generates one (harder to use in automated check initially)
           # Using --insecure temporarily for healthcheck might be an option, or better, provide the CA cert
-          test: ["CMD-SHELL", "curl -s -k --cacert /etc/elasticsearch/certs/ca.crt -u elastic:${ELASTIC_BOOTSTRAP_PASSWORD} \"https://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s\" || exit 1"]
+          test: ["CMD-SHELL", "curl -s -k --cacert /etc/elasticsearch/certs/ca.crt -u elastic:${LOCAL_BACKEND_BOOTSTRAP_PASSWORD} \"https://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s\" || exit 1"]
           interval: 10s
           timeout: 10s
           retries: 5
@@ -34,16 +39,18 @@ services:
           memory: 2g
 
   kibana:
+    networks:
+      - artemis-network
     container_name: artemis-kibana
     build:
       context: ./kibana
       args:
         CERT_DIR: /certs # Path inside container for certs
-        KIBANA_PASSWORD: ${ELASTIC_BOOTSTRAP_PASSWORD}
+        KIBANA_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
     ports:
       - "5601:5601"
     environment:
-        KIBANA_PASSWORD: ${ELASTIC_BOOTSTRAP_PASSWORD}
+        KIBANA_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
         ELASTICSEARCH_SERVICEACCOUNTTOKEN_FILE: /shared/kibana_service_token.txt
     volumes:
       - ./kibana/data:/usr/share/kibana/data # persist data      
@@ -51,14 +58,109 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy # Waits for Elasticsearch to pass its healthcheck
+      elasticsearch-user-setup:
+        condition: service_completed_successfully # Wait for the setup to complete successfully
+
+  elasticsearch-user-setup:
+      # Instead of 'image:', use 'build:' to build the Dockerfile
+      build:
+        context: . # Use the current directory as the build context
+        dockerfile: Dockerfile.setup 
+      networks:
+        - artemis-network      
+      container_name: es-user-setup
+      depends_on:
+        elasticsearch:
+          condition: service_healthy # Wait for ES to be healthy
+      environment:
+        # --- These environment variables remain the same ---
+        ELASTIC_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD} # Use the same password as LOCAL_BACKEND_BOOTSTRAP_PASSWORD
+        NEW_USER_NAME: "my_app_user"
+        NEW_USER_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
+        NEW_USER_ROLES: '["logstash_admin", "kibana_user"]' # JSON array format
+        ES_HOST: "elasticsearch" # Use the service name of your Elasticsearch container
+        ES_PORT: "9200"
+        # Path to the CA certificate *inside this setup container*
+        ES_CACERT: "/certs/ca.crt"
+      volumes:
+        # --- This volume mount remains the same ---
+        # Mount the CA cert into this container so curl can trust ES
+        - ./elasticsearch/certs:/certs:ro
+      # --- The command remains the same ---
+      command: >
+        sh -c '
+          # Add debugging steps
+          echo "Network debugging:"
+          cat /etc/hosts
+          ip addr
+          echo "Attempting to ping elasticsearch:"
+          ping -c 2 elasticsearch || echo "Cannot ping elasticsearch"
+          ping -c 2 artemis-elasticsearch || echo "Cannot ping artemis-elasticsearch"
+          ping -c 2 $$ES_HOST || echo "Cannot ping ES_HOST"
+
+          
+          echo "DNS resolution test:"
+          nslookup elasticsearch || echo "Cannot resolve elasticsearch"
+          
+          # Original command continues...
+          echo "Waiting a few seconds for Elasticsearch to fully settle..."
+          sleep 10
+
+          echo "Attempting to create user: $NEW_USER_NAME..."
+          echo "Using ES_HOST=$$ES_HOST and ES_PORT=$$ES_PORT"
+
+          # Try with IP address if hostname resolution fails
+          ES_IP=$$(getent hosts elasticsearch | awk "{ print $1 }")
+          if [ -n "$ES_IP" ]; then
+            echo "Resolved elasticsearch to IP: $$ES_IP"
+            curl -X POST \
+              --cacert "$$ES_CACERT" \
+              -u "elastic:$$ELASTIC_PASSWORD" \
+              "https://$$ES_IP:$$ES_PORT/_security/user/$$NEW_USER_NAME" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"password\": \"$$NEW_USER_PASSWORD\",
+                \"roles\": $$NEW_USER_ROLES
+              }"
+          else
+            # Fall back to the original command
+            curl -X POST \
+              --cacert "$$ES_CACERT" \
+              -u "elastic:$$ELASTIC_PASSWORD" \
+              "https://$$ES_HOST:$$ES_PORT/_security/user/$$NEW_USER_NAME" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"password\": \"$$NEW_USER_PASSWORD\",
+                \"roles\": $$NEW_USER_ROLES
+              }"
+          fi
+
+          # Check exit code...
+          if [ $? -eq 0 ]; then
+            echo "User creation command sent successfully."
+            exit 0
+          else
+            echo "User creation command failed!" >&2
+            exit 1
+          fi
+        '
+        restart: 'no' # Only run this setup once
 
   mongodb:
+    networks:
+      - artemis-network  
     build:
       context: ./mongodb
     ports:
       - "27017:27017"
     volumes:
-      - ./mongodb/data:/data/db # Persist data on host
+      - ./mongodb/data:/data/db
+      - ./mongodb/configdb:/data/configdb
+    command: mongod --bind_ip_all  # Add this line to bind to all interfaces
+    environment:
+      MONGODB_ENABLE_AUTHENTICATION: "false"  # For development only
+      # MONGO_INITDB_ROOT_USERNAME: admin
+      # MONGO_INITDB_ROOT_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
     deploy:
       resources:
         limits:
@@ -68,41 +170,71 @@ services:
     build:
       context: ./kafka
       args:
-        CERT_DIR: /certs # Path inside container for certs
+        CERT_DIR: /certs
+    networks:
+      artemis-network:
+        aliases: 
+          - kafka
+          - artemis-kafka
+    container_name: artemis-kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
-      - "9092:9092"
+      - "9094:9094"
     environment:
+      # Fix Zookeeper connection
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT:/kafka:9092,SSL:/kafka:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,SSL:SSL
-      KAFKA_SSL_KEYSTORE_LOCATION: /etc/elasticsearch/kafka.keystore.jks
-      KAFKA_SSL_KEYSTORE_PASSWORD: changeme
-      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/elasticsearch/kafka.truststore.jks
-      KAFKA_SSL_TRUSTSTORE_PASSWORD: changeme
+      # Fix listener configuration
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://artemis-kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Keep SSL settings for when you need them
+      KAFKA_SSL_KEYSTORE_LOCATION: /certs/kafka.keystore.jks
+      KAFKA_SSL_KEYSTORE_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /certs/kafka.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
     volumes:
-      - ./kafka/data:/var/lib/kafka/data # Persist data on host
-      - ./certs:/certs # Mount certificates
+      - ./kafka/data:/var/lib/kafka/data
+      - ./certs:/certs
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
           memory: 2g
 
   zookeeper:
+    networks:
+      artemis-network:
+        aliases: 
+          - zookeeper
+    container_name: artemis-zookeeper  # Add container name
     build: ./zookeeper
     ports:
       - "2181:2181"
     volumes:
-      - ./zookeeper/data:/tmp/zookeeper/data # persist data
-      - ./zookeeper/logs:/tmp/zookeeper/logs # persist data
+      - ./zookeeper/data:/tmp/zookeeper/data
+      - ./zookeeper/logs:/tmp/zookeeper/logs
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
+    healthcheck:  # Add healthcheck
+      test: ["CMD", "/opt/kafka/healthcheck.sh"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
 
   sqlserver:
     build: ./sqlserver
     ports:
       - "1433:1433"
+    networks:
+      - artemis-network      
     environment:
       ACCEPT_EULA: "Y"
       SA_PASSWORD: "@rt3m1sD3v" # Replace with a strong password
@@ -112,3 +244,7 @@ services:
 
 volumes:
   shared-volume:  # Define the shared volume
+
+networks:
+  artemis-network:
+    driver: bridge

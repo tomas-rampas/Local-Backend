@@ -57,7 +57,7 @@ RUN echo "y" | /usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.
 RUN echo "y" | /usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.truststore.secure_password
 RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keystore add xpack.security.transport.ssl.keystore.secure_password
 RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keystore add xpack.security.transport.ssl.truststore.secure_password
-RUN echo "$ELASTIC_PASSWORD" | //elasticsearch-keystore add bootstrap.password -x
+RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keystore add bootstrap.password -x
 
 CMD ["/bin/sh", "-c", "/usr/local/bin/generate-token.sh && /usr/share/elasticsearch/bin/elasticsearch"]
 
