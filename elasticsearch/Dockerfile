@@ -27,12 +27,15 @@ COPY certs/elasticsearch.truststore.jks /etc/elasticsearch/certs/elasticsearch.t
 COPY certs/ca.crt /etc/elasticsearch/certs/ca.crt
 COPY elasticsearch.yml /etc/elasticsearch/elasticsearch.yml
 COPY generate-token.sh /usr/local/bin/generate-token.sh
+COPY generate-token-enhanced.sh /usr/local/bin/generate-token-enhanced.sh
 RUN chmod +x /usr/local/bin/generate-token.sh
+RUN chmod +x /usr/local/bin/generate-token-enhanced.sh
 
 # RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 RUN chown -R elasticsearch:elasticsearch /etc/elasticsearch/
 RUN chown elasticsearch:elasticsearch /etc/elasticsearch/certs/elasticsearch.truststore.jks
 RUN chown elasticsearch:elasticsearch /usr/local/bin/generate-token.sh
+RUN chown elasticsearch:elasticsearch /usr/local/bin/generate-token-enhanced.sh
 
 EXPOSE 9200
 
@@ -59,4 +62,4 @@ RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keysto
 RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keystore add xpack.security.transport.ssl.truststore.secure_password
 RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keystore add bootstrap.password -x
 
-CMD ["/bin/sh", "-c", "/usr/local/bin/generate-token.sh && /usr/share/elasticsearch/bin/elasticsearch"]
+CMD ["/bin/sh", "-c", "/usr/local/bin/generate-token-enhanced.sh && /usr/share/elasticsearch/bin/elasticsearch"]

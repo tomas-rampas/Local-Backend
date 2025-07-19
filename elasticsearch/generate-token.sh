@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Variables
-TOKEN_NAME="kibana-token"
+TOKEN_NAME="kibana-token-$(date +%s)"  # Add timestamp to make token name unique
 SERVICE_ACCOUNT="elastic/kibana"
 ES_BIN="/usr/share/elasticsearch/bin"
 OUTPUT_DIR="/shared"  # Shared volume directory
@@ -9,11 +9,14 @@ OUTPUT_DIR="/shared"  # Shared volume directory
 # Ensure output directory exists
 mkdir -p "$OUTPUT_DIR"
 
-# Check if token already exists
+# Always generate a new token on container start
 TOKEN_FILE="$OUTPUT_DIR/kibana_service_token.txt"
+echo "Generating new service token for container start..."
+
+# Remove old token file if it exists
 if [ -f "$TOKEN_FILE" ]; then
-  echo "Token already exists at $TOKEN_FILE. Skipping creation."
-  exit 0
+  echo "Removing existing token file: $TOKEN_FILE"
+  rm -f "$TOKEN_FILE"
 fi
 
 # Function to create token after ES is running
@@ -33,13 +36,22 @@ create_token_when_ready() {
     sleep 5
   done
   
-  # Generate the token and extract it
+  # Clean up old tokens first (optional - helps prevent token accumulation)
+  echo "Cleaning up old kibana tokens..."
+  $ES_BIN/elasticsearch-service-tokens list "$SERVICE_ACCOUNT" 2>/dev/null | grep "kibana-token-" | while read -r old_token_name; do
+    if [ "$old_token_name" != "$TOKEN_NAME" ]; then
+      echo "Removing old token: $old_token_name"
+      $ES_BIN/elasticsearch-service-tokens delete "$SERVICE_ACCOUNT" "$old_token_name" 2>/dev/null || true
+    fi
+  done
+  
+  # Generate the new token and extract it
   echo "Creating service token for $SERVICE_ACCOUNT..."
   TOKEN_OUTPUT=$($ES_BIN/elasticsearch-service-tokens create "$SERVICE_ACCOUNT" "$TOKEN_NAME" 2>/dev/null)
   
   if [ $? -eq 0 ]; then
     echo "$TOKEN_OUTPUT" | grep "SERVICE_TOKEN" | cut -d'=' -f2 | tr -d ' ' > "$TOKEN_FILE"
-    echo "Token created and saved to $TOKEN_FILE"
+    echo "New token created and saved to $TOKEN_FILE"
     cat "$TOKEN_FILE"
   else
     echo "Failed to create token. Output: $TOKEN_OUTPUT"

@@ -4,6 +4,7 @@
 services:
   elasticsearch:    
     container_name: artemis-elasticsearch
+    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-elasticsearch:${IMAGE_TAG:-latest}
     networks:
       artemis-network:
         aliases: 
@@ -42,6 +43,7 @@ services:
     networks:
       - artemis-network
     container_name: artemis-kibana
+    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-kibana:${IMAGE_TAG:-latest}
     build:
       context: ./kibana
       args:
@@ -63,6 +65,7 @@ services:
 
   elasticsearch-user-setup:
       # Instead of 'image:', use 'build:' to build the Dockerfile
+      image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-elasticsearch-user-setup:${IMAGE_TAG:-latest}
       build:
         context: . # Use the current directory as the build context
         dockerfile: Dockerfile.setup 
@@ -149,6 +152,7 @@ services:
   mongodb:
     networks:
       - artemis-network  
+    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-mongodb:${IMAGE_TAG:-latest}
     build:
       context: ./mongodb
     ports:
@@ -167,6 +171,7 @@ services:
     stop_grace_period: 30s
     
   kafka:
+    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-kafka:${IMAGE_TAG:-latest}
     build:
       context: ./kafka
       args:
@@ -215,6 +220,7 @@ services:
         aliases: 
           - zookeeper
     container_name: artemis-zookeeper  # Add container name
+    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-zookeeper:${IMAGE_TAG:-latest}
     build: ./zookeeper
     ports:
       - "2181:2181"
@@ -230,11 +236,12 @@ services:
       retries: 5
 
   sqlserver:
+    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-sqlserver:${IMAGE_TAG:-latest}
     build: ./sqlserver
     ports:
       - "1433:1433"
     networks:
-      - artemis-network      
+      - artemis-network
     environment:
       ACCEPT_EULA: "Y"
       SA_PASSWORD: "@rt3m1sD3v" # Replace with a strong password
