@@ -156,16 +156,16 @@ services:
     volumes:
       - ./mongodb/data:/data/db
       - ./mongodb/configdb:/data/configdb
-    command: mongod --bind_ip_all  # Add this line to bind to all interfaces
+    command: mongod --bind_ip_all --wiredTigerCacheSizeGB 0.5
     environment:
-      MONGODB_ENABLE_AUTHENTICATION: "false"  # For development only
-      # MONGO_INITDB_ROOT_USERNAME: admin
-      # MONGO_INITDB_ROOT_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
+      MONGODB_ENABLE_AUTHENTICATION: "false"
     deploy:
       resources:
         limits:
           memory: 1g
-
+    # Add shutdown grace period
+    stop_grace_period: 30s
+    
   kafka:
     build:
       context: ./kafka
