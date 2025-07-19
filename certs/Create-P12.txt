@@ -1,0 +1,11 @@
+# Generate a self-signed certificate
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout elasticsearch.key -out elasticsearch.crt -subj "/CN=localhost"
+
+# Convert to PKCS#12
+openssl pkcs12 -export -out elasticsearch.p12 -inkey elasticsearch.key -in elasticsearch.crt -passout pass:changeme
+
+# Generate a self-signed certificate
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout kibana .key -out kibana .crt -subj "/CN=localhost"
+
+# Convert to PKCS#12
+openssl pkcs12 -export -out kibana .p12 -inkey kibana .key -in kibana .crt -passout pass:changeme

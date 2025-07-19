@@ -1,0 +1,1 @@
+curl -k --cacert certs/ca.crt -u elastic:changeme https://localhost:9200/_cat/indices?v

@@ -1,0 +1,8 @@
+curl -s -k --cacert /etc/elasticsearch/certs/ca.crt -u elastic:changeme "https://localhost:9200/_cluster/health?wait_for_status=green&timeout=5s"
+curl -s -k --cacert /etc/elasticsearch/certs/ca.crt -u elastic:changeme "https://artemis-elasticsearch:9200/_cluster/health?wait_for_status=green&timeout=5s"
+
+curl \
+ --request POST 'https://localhost:9200/_security/profile/_activate' \
+ --header "Authorization: $my" \
+ --header "Content-Type: application/json" \
+ --data '{"access_token":"","grant_type":"password","changeme":"string","username":"string"}'

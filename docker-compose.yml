@@ -1,0 +1,114 @@
+# docker-compose.yml
+# version: '3.8'
+     
+services:
+  elasticsearch:    
+    container_name: artemis-elasticsearch
+    build:
+      context: ./elasticsearch
+      args:
+        CERT_DIR: /certs
+        ELASTIC_PASSWORD: ${ELASTIC_BOOTSTRAP_PASSWORD}
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      # Node and cluster configuration
+      ELASTIC_PASSWORD: ${ELASTIC_BOOTSTRAP_PASSWORD}
+    volumes:
+      - ./elasticsearch/data:/usr/share/elasticsearch/data # Persist data on host
+      - ./elasticsearch/logs:/var/log/elasticsearch # Persist logs on host      
+      - shared-volume:/shared  # Access the shared token file
+    healthcheck: # Important for Kibana and potential setup scripts
+          # Test command needs adjustment based on your auth & cert setup
+          # If ELASTIC_PASSWORD is set, use it. If not, ES generates one (harder to use in automated check initially)
+          # Using --insecure temporarily for healthcheck might be an option, or better, provide the CA cert
+          test: ["CMD-SHELL", "curl -s -k --cacert /etc/elasticsearch/certs/ca.crt -u elastic:${ELASTIC_BOOTSTRAP_PASSWORD} \"https://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s\" || exit 1"]
+          interval: 10s
+          timeout: 10s
+          retries: 5
+          start_period: 30s # Give Elasticsearch time to start up      
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  kibana:
+    container_name: artemis-kibana
+    build:
+      context: ./kibana
+      args:
+        CERT_DIR: /certs # Path inside container for certs
+        KIBANA_PASSWORD: ${ELASTIC_BOOTSTRAP_PASSWORD}
+    ports:
+      - "5601:5601"
+    environment:
+        KIBANA_PASSWORD: ${ELASTIC_BOOTSTRAP_PASSWORD}
+        ELASTICSEARCH_SERVICEACCOUNTTOKEN_FILE: /shared/kibana_service_token.txt
+    volumes:
+      - ./kibana/data:/usr/share/kibana/data # persist data      
+      - shared-volume:/shared  # Access the shared token file    
+    depends_on:
+      elasticsearch:
+        condition: service_healthy # Waits for Elasticsearch to pass its healthcheck
+
+  mongodb:
+    build:
+      context: ./mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./mongodb/data:/data/db # Persist data on host
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  kafka:
+    build:
+      context: ./kafka
+      args:
+        CERT_DIR: /certs # Path inside container for certs
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT:/kafka:9092,SSL:/kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,SSL:SSL
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/elasticsearch/kafka.keystore.jks
+      KAFKA_SSL_KEYSTORE_PASSWORD: changeme
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/elasticsearch/kafka.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: changeme
+    volumes:
+      - ./kafka/data:/var/lib/kafka/data # Persist data on host
+      - ./certs:/certs # Mount certificates
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  zookeeper:
+    build: ./zookeeper
+    ports:
+      - "2181:2181"
+    volumes:
+      - ./zookeeper/data:/tmp/zookeeper/data # persist data
+      - ./zookeeper/logs:/tmp/zookeeper/logs # persist data
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  sqlserver:
+    build: ./sqlserver
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "@rt3m1sD3v" # Replace with a strong password
+    volumes:
+      - ./sqlserver/data:/var/opt/mssql/data
+      - ./sqlserver/backup:/var/opt/mssql/backup # Mount backup directory
+
+volumes:
+  shared-volume:  # Define the shared volume
