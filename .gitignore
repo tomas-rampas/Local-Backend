@@ -12,4 +12,5 @@ kafka/data/**
 zookeeper/logs/**
 zookeeper/data/**
 mongodb/data/**
-
+sqlserver/data/**
+kibana/data/**
