@@ -29,7 +29,7 @@ This project provides a containerized backend infrastructure stack designed for 
 ### 1. Clone and Setup
 
 ```bash
-git clone https://github.com/tomas-rampas/Local-Backend.git
+git clone https://github.com/${GIT_HUB_USER}/Local-Backend.git
 cd Local-Backend
 ```
 
@@ -39,7 +39,7 @@ Create a `.env` file in the project root:
 
 ```env
 # Registry Configuration
-REGISTRY_PREFIX=ghcr.io/tomas-rampas
+REGISTRY_PREFIX=ghcr.io/${GIT_HUB_USER}
 IMAGE_TAG=latest
 
 # Security Configuration
