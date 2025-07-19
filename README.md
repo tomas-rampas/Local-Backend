@@ -65,7 +65,7 @@ docker-compose ps
 - **Kibana**: http://localhost:5601
 - **MongoDB**: mongodb://localhost:27017
 - **Kafka**: localhost:9094
-- **SQL Server**: localhost:1433 (sa/@rt3m1sD3v)
+- **SQL Server**: localhost:1433
 
 ## 🔧 Configuration
 
