@@ -8,9 +8,18 @@ elasticsearch/data/*
 !elasticsearch/data/.gitkeep
 
 kafka/logs/**
+!kafka/logs/.gitkeep
 kafka/data/**
+!kafka/data/.gitkeep
 zookeeper/logs/**
+!zookeeper/logs/.gitkeep
 zookeeper/data/**
+!zookeeper/data/.gitkeep
 mongodb/data/**
+!mongodb/data/.gitkeep
+mongodb/configdb/**
+!mongodb/configdb/.gitkeep
 sqlserver/data/**
+!sqlserver/data/.gitkeep
 kibana/data/**
+!kibana/data/.gitkeep
