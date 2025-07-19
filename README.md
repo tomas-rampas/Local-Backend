@@ -39,7 +39,7 @@ Create a `.env` file in the project root:
 
 ```env
 # Registry Configuration
-REGISTRY_PREFIX=tomasrampas
+REGISTRY_PREFIX=ghcr.io/tomas-rampas
 IMAGE_TAG=latest
 
 # Security Configuration
@@ -73,7 +73,7 @@ docker-compose ps
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `REGISTRY_PREFIX` | `tomasrampas` | Docker registry prefix for images |
+| `REGISTRY_PREFIX` | `ghcr.io/tomas-rampas` | Docker registry prefix for images |
 | `IMAGE_TAG` | `latest` | Version tag for Docker images |
 | `LOCAL_BACKEND_BOOTSTRAP_PASSWORD` | - | Master password for Elasticsearch and other services |
 
