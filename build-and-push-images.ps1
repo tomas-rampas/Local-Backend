@@ -2,20 +2,24 @@
 # Script to build, tag, and push all Docker images from docker-compose
 
 param(
-    [string]$RegistryPrefix = "artlockend",
-    [string]$ImageTag = "latest",
+    [string]$RegistryPrefix,
+    [string]$ImageTag,
     [switch]$PushImages = $false,
     [switch]$BuildOnly = $false
 )
 
-Write-Host "=== Docker Compose Image Build and Push Script ===" -ForegroundColor Green
-Write-Host "Registry Prefix: $RegistryPrefix" -ForegroundColor Yellow
-Write-Host "Image Tag: $ImageTag" -ForegroundColor Yellow
-Write-Host ""
-
 # Set environment variables for docker-compose
-$env:REGISTRY_PREFIX = $RegistryPrefix
-$env:IMAGE_TAG = $ImageTag
+if(-not [string]::IsNullOrEmpty($ImageTag)) {
+    $env:REGISTRY_PREFIX = $RegistryPrefix
+}
+if(-not [string]::IsNullOrEmpty($ImageTag)) {
+    $env:IMAGE_TAG = $ImageTag
+}
+
+Write-Host "=== Docker Compose Image Build and Push Script ===" -ForegroundColor Green
+Write-Host "Registry Prefix: $env:REGISTRY_PREFIX" -ForegroundColor Yellow
+Write-Host "Image Tag: $env:IMAGE_TAG" -ForegroundColor Yellow
+Write-Host ""
 
 try {
     # Step 1: Build all images
@@ -33,13 +37,13 @@ try {
     # Step 2: List the created images
     Write-Host "Step 2: Listing created images..." -ForegroundColor Cyan
     $images = @(
-        "$RegistryPrefix/artemis-elasticsearch:$ImageTag",
-        "$RegistryPrefix/artemis-kibana:$ImageTag",
-        "$RegistryPrefix/artemis-elasticsearch-user-setup:$ImageTag",
-        "$RegistryPrefix/artemis-mongodb:$ImageTag",
-        "$RegistryPrefix/artemis-kafka:$ImageTag",
-        "$RegistryPrefix/artemis-zookeeper:$ImageTag",
-        "$RegistryPrefix/artemis-sqlserver:$ImageTag"
+        "$env:REGISTRY_PREFIX/artemis-elasticsearch:$env:IMAGE_TAG",
+        "$env:REGISTRY_PREFIX/artemis-kibana:$env:IMAGE_TAG",
+        "$env:REGISTRY_PREFIX/artemis-elasticsearch-user-setup:$env:IMAGE_TAG",
+        "$env:REGISTRY_PREFIX/artemis-mongodb:$env:IMAGE_TAG",
+        "$env:REGISTRY_PREFIX/artemis-kafka:$env:IMAGE_TAG",
+        "$env:REGISTRY_PREFIX/artemis-zookeeper:$env:IMAGE_TAG",
+        "$env:REGISTRY_PREFIX/artemis-sqlserver:$env:IMAGE_TAG"
     )
     
     foreach ($image in $images) {

@@ -64,14 +64,14 @@ services:
         condition: service_completed_successfully # Wait for the setup to complete successfully
 
   elasticsearch-user-setup:
+      container_name: artemis-elasticsearch-user-setup
       # Instead of 'image:', use 'build:' to build the Dockerfile
       image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-elasticsearch-user-setup:${IMAGE_TAG:-latest}
       build:
         context: . # Use the current directory as the build context
-        dockerfile: Dockerfile.setup 
+        dockerfile: ./elasticsearch/UserSetup.Dockerfile 
       networks:
-        - artemis-network      
-      container_name: es-user-setup
+        - artemis-network            
       depends_on:
         elasticsearch:
           condition: service_healthy # Wait for ES to be healthy
@@ -150,6 +150,7 @@ services:
         restart: 'no' # Only run this setup once
 
   mongodb:
+    container_name: artemis-mongodb
     networks:
       - artemis-network  
     image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-mongodb:${IMAGE_TAG:-latest}
@@ -219,7 +220,7 @@ services:
       artemis-network:
         aliases: 
           - zookeeper
-    container_name: artemis-zookeeper  # Add container name
+    container_name: artemis-zookeeper 
     image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-zookeeper:${IMAGE_TAG:-latest}
     build: ./zookeeper
     ports:
@@ -229,13 +230,14 @@ services:
       - ./zookeeper/logs:/tmp/zookeeper/logs
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
-    healthcheck:  # Add healthcheck
+    healthcheck: 
       test: ["CMD", "/opt/kafka/healthcheck.sh"]
       interval: 5s
       timeout: 10s
       retries: 5
 
   sqlserver:
+    container_name: artemis-sqlserver 
     image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-sqlserver:${IMAGE_TAG:-latest}
     build: ./sqlserver
     ports:

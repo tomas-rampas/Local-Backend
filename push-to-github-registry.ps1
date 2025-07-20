@@ -16,8 +16,8 @@ Write-Host "Image Tag: $ImageTag" -ForegroundColor Yellow
 Write-Host ""
 
 # Set environment variables for docker-compose
-$env:REGISTRY_PREFIX = "ghcr.io/$GitHubUsername"
-$env:IMAGE_TAG = $ImageTag
+# $env:REGISTRY_PREFIX = "ghcr.io/$GitHubUsername"
+# $env:IMAGE_TAG = $ImageTag
 
 try {
     # Step 1: Login to GitHub Container Registry
