@@ -4,7 +4,7 @@ FROM redhat/ubi8:latest
 ARG CERT_DIR
 
 RUN dnf update -y && \
-    dnf install -y wget rpm
+    dnf install -y wget rpm sudo
 
 RUN rpm --import https://artifacts.elastic.co/GPG-KEY-elasticsearch && \
     cat <<EOF > /etc/yum.repos.d/elasticsearch.repo
@@ -32,10 +32,15 @@ RUN chmod +x /usr/local/bin/kibana-entrypoint.sh
 # Change ownership of Kibana directories
 RUN chown -R kibana:kibana /etc/kibana
 
+# Create the data directory and ensure proper permissions
+RUN mkdir -p /usr/share/kibana/data && \
+    chown -R kibana:kibana /usr/share/kibana/data && \
+    chmod -R 755 /usr/share/kibana/data
+
 EXPOSE 5601
 
-# Switch to the kibana user
-USER kibana 
+# Don't switch to kibana user yet - we'll do it in the entrypoint after fixing permissions
+# USER kibana
 
 ARG KIBANA_PASSWORD
 

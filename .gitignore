@@ -24,3 +24,11 @@ sqlserver/data/**
 kibana/data/**
 !kibana/data/.gitkeep
 .vscode/**
+
+kibana/logs/
+!kibana/logs/.gitkeep
+
+sqlserver/logs/
+!sqlserver/logs/.gitkeep
+shared/
+!shared/.gitkeep

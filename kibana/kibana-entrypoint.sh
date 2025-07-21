@@ -1,5 +1,21 @@
 #!/bin/bash
 
+# Fix permissions for the data directory (needed when volume is mounted)
+# This runs as root before switching to kibana user
+if [ -d "/usr/share/kibana/data" ]; then
+    echo "Fixing permissions for /usr/share/kibana/data..."
+    chown -R kibana:kibana /usr/share/kibana/data
+    chmod -R 755 /usr/share/kibana/data
+    echo "Permissions fixed for data directory"
+fi
+
+# Fix permissions for the shared volume
+if [ -d "/shared" ]; then
+    echo "Fixing permissions for /shared..."
+    chown -R kibana:kibana /shared
+    chmod -R 755 /shared
+fi
+
 # Wait for the token file to be available
 TOKEN_FILE="/shared/kibana_service_token.txt"
 echo "Waiting for service token file..."
@@ -32,6 +48,6 @@ else
   exit 1
 fi
 
-# Start Kibana
-echo "Starting Kibana..."
-exec /usr/share/kibana/bin/kibana
+# Start Kibana as kibana user
+echo "Starting Kibana as kibana user..."
+exec sudo -u kibana /usr/share/kibana/bin/kibana

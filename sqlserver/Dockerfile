@@ -8,8 +8,8 @@ ENV ACCEPT_EULA=Y \
     MSSQL_ENABLE_HADR=0
 
 # Use build args for sensitive data without default values
-ENV MSSQL_SA_PASSWORD=Adm1npwd
-ENV ACCEPT_EULA=Y    
+# ARG MSSQL_SA_PASSWORD
+
 
 # Update package lists and install dependencies
 RUN dnf -y update && \
@@ -41,6 +41,7 @@ RUN /opt/mssql/bin/mssql-conf set sqlagent.enabled true && \
 
 # Expose SQL Server port
 EXPOSE 1433
+EXPOSE 1434/udp
 
 # Switch to non-root user
 USER mssql
