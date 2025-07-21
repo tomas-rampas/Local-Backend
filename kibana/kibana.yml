@@ -160,6 +160,11 @@ pid.file: /run/kibana/kibana.pid
 
 # =================== Frequently used (Optional)===================
 
+# =================== Security: Encrypted Saved Objects ===================
+# This key is used to encrypt sensitive information in Kibana.
+# It must be at least 32 characters long.
+xpack.encryptedSavedObjects.encryptionKey: "a7f5d3e8b9c2f1e4d6a8b3c5e7f9d2a4b6c8e1f3d5a7b9c2e4f6a8b1c3d5e7f9"
+
 # =================== Saved Objects: Migrations ===================
 # Saved object migrations run at startup. If you run into migration-related issues, you might need to adjust these settings.
 

@@ -39,6 +39,17 @@ if [ -f "$TOKEN_FILE" ]; then
     echo "Populating elasticsearch.serviceAccountToken in kibana.yml"
     sed -i "s|elasticsearch.serviceAccountToken:.*|elasticsearch.serviceAccountToken: \"$ELASTICSEARCH_SERVICEACCOUNTTOKEN\"|" /etc/kibana/kibana.yml
     echo "Token successfully configured in kibana.yml"
+    
+    # Update encryption key if provided via environment variable
+    echo "Checking for KIBANA_ENCRYPTION_KEY environment variable..."
+    echo "KIBANA_ENCRYPTION_KEY value: ${KIBANA_ENCRYPTION_KEY:-NOT SET}"
+    if [ -n "$KIBANA_ENCRYPTION_KEY" ]; then
+      echo "Setting xpack.encryptedSavedObjects.encryptionKey from environment variable"
+      sed -i "s|xpack.encryptedSavedObjects.encryptionKey:.*|xpack.encryptedSavedObjects.encryptionKey: \"$KIBANA_ENCRYPTION_KEY\"|" /etc/kibana/kibana.yml
+      echo "Encryption key has been set in kibana.yml"
+    else
+      echo "KIBANA_ENCRYPTION_KEY environment variable is not set"
+    fi
   else
     echo "Token file is empty!"
     exit 1

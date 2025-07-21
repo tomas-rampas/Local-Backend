@@ -65,6 +65,7 @@ services:
       <<: *common-env
       KIBANA_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
       ELASTICSEARCH_SERVICEACCOUNTTOKEN_FILE: /shared/kibana_service_token.txt
+      KIBANA_ENCRYPTION_KEY: ${KIBANA_ENCRYPTION_KEY:-a7f5d3e8b9c2f1e4d6a8b3c5e7f9d2a4b6c8e1f3d5a7b9c2e4f6a8b1c3d5e7f9}
     volumes:
       - kibana-data:/usr/share/kibana/data:rw
       - kibana-logs:/var/log/kibana:rw
