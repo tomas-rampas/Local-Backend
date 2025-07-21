@@ -22,12 +22,17 @@ COPY start-kafka.sh /opt/kafka/start-kafka.sh
 RUN chmod +x /opt/kafka/start-kafka.sh && \
     chown kafka:kafka /opt/kafka/start-kafka.sh
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 EXPOSE 9092 9093 9094
 
-# Use non-root user
-USER kafka
+# Don't switch to kafka user here - entrypoint will handle it
+# USER kafka
 
 # Set volumes
 VOLUME ["/var/lib/kafka/data"]
 
-CMD ["/opt/kafka/start-kafka.sh"]
+# Use entrypoint to fix permissions before starting
+ENTRYPOINT ["/docker-entrypoint.sh"]
