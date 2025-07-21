@@ -1,6 +1,37 @@
 # Ignore .env file with sensitive information
 /.env
 
+# ================= CERTIFICATE SECURITY EXCLUSIONS =================
+# CRITICAL: Never commit certificates, keys, or keystores to version control
+# These contain sensitive cryptographic material
+
+# All certificate file extensions
+*.crt
+*.key
+*.p12
+*.pfx
+*.jks
+*.csr
+*.srl
+*.pem
+*.der
+*.cer
+
+# Certificate directories (keeping structure but not contents)
+certs/*
+!certs/.gitkeep
+!certs/README.md
+!certs/Generate-AllCertificates.ps1
+!certs/Install-CACertificate.ps1
+!certs/*/
+certs/*/*
+!certs/*/.gitkeep
+
+# Service-specific certificate directories
+*/certs/
+**/certs/*
+!**/certs/.gitkeep
+
 # Ignore all Elasticsearch logs
 elasticsearch/logs/*
 !elasticsearch/logs/.gitkeep

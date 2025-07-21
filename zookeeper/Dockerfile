@@ -26,8 +26,8 @@ RUN echo '#!/bin/bash' > /opt/kafka/healthcheck.sh && \
     chown kafka:kafka /opt/kafka/healthcheck.sh
 
 # Copy custom zookeeper properties and entrypoint script
-COPY zookeeper.properties /opt/kafka/config/zookeeper.properties
-COPY entrypoint.sh /opt/kafka/entrypoint.sh
+COPY zookeeper/zookeeper.properties /opt/kafka/config/zookeeper.properties
+COPY zookeeper/entrypoint.sh /opt/kafka/entrypoint.sh
 RUN chmod +x /opt/kafka/entrypoint.sh
 
 # Expose Zookeeper client port

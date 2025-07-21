@@ -29,7 +29,8 @@ services:
         aliases: 
           - elasticsearch
     build:
-      context: ./elasticsearch
+      context: .
+      dockerfile: ./elasticsearch/Dockerfile
       args:
         CERT_DIR: /certs
         ELASTIC_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
@@ -55,7 +56,8 @@ services:
     networks:
       - artemis-network
     build:
-      context: ./kibana
+      context: .
+      dockerfile: ./kibana/Dockerfile
       args:
         CERT_DIR: /certs
         KIBANA_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
@@ -86,8 +88,8 @@ services:
     container_name: artemis-elasticsearch-user-setup
     image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-elasticsearch-user-setup:${IMAGE_TAG:-latest}
     build:
-      context: ./elasticsearch
-      dockerfile: UserSetup.Dockerfile 
+      context: .
+      dockerfile: ./elasticsearch/UserSetup.Dockerfile 
     networks:
       - artemis-network            
     depends_on:
@@ -101,9 +103,9 @@ services:
       NEW_USER_ROLES: ${ES_NEW_USER_ROLES:-'["logstash_admin", "kibana_user"]'}
       ES_HOST: "elasticsearch"
       ES_PORT: "9200"
-      ES_CACERT: "/certs/ca.crt"
+      ES_CACERT: "/certs/ca/ca.crt"
     volumes:
-      - ./elasticsearch/certs:/certs:ro
+      - ./certs:/certs:ro
     command: >
       sh -c '
         # Network debugging
@@ -121,35 +123,30 @@ services:
         # Wait for Elasticsearch to settle
         echo "Waiting a few seconds for Elasticsearch to fully settle..."
         sleep 10
+        
+        # Certificate debugging
+        echo "Certificate debugging:"
+        echo "CA Certificate path: $$ES_CACERT"
+        ls -la "$$ES_CACERT"
+        echo "CA Certificate details:"
+        openssl x509 -in "$$ES_CACERT" -text -noout | head -20
+        
+        # Test basic connectivity first
+        echo "Testing basic HTTPS connectivity:"
+        curl -v --connect-timeout 10 --max-time 30 -u "elastic:$$ELASTIC_PASSWORD" -k "https://$$ES_HOST:$$ES_PORT/_cluster/health" || echo "Basic HTTPS test failed"
 
         echo "Attempting to create user: $NEW_USER_NAME..."
         echo "Using ES_HOST=$$ES_HOST and ES_PORT=$$ES_PORT"
 
-        # Try with IP address if hostname resolution fails
-        #ES_IP=$$(getent hosts elasticsearch | awk "{ print \$$1 }")
-        #if [ -n "$$ES_IP" ]; then
-        #  echo "Resolved elasticsearch to IP: $$ES_IP"
-        #  curl -X POST \
-        #    --cacert "$$ES_CACERT" \
-        #    -u "elastic:$$ELASTIC_PASSWORD" \
-        #    "https://$$ES_IP:$$ES_PORT/_security/user/$$NEW_USER_NAME" \
-        #    -H "Content-Type: application/json" \
-        #    -d "{
-        #      \"password\": \"$$NEW_USER_PASSWORD\",
-        #      \"roles\": $$NEW_USER_ROLES
-        #    }"
-        #else
-          # Fall back to hostname
-          curl -X POST \
-            --cacert "$$ES_CACERT" \
-            -u "elastic:$$ELASTIC_PASSWORD" \
-            "https://$$ES_HOST:$$ES_PORT/_security/user/$$NEW_USER_NAME" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"password\": \"$$NEW_USER_PASSWORD\",
-              \"roles\": $$NEW_USER_ROLES
-            }"
-        #fi
+        echo "Attempting user creation with self-signed certificate..."
+        curl -k -X POST \
+          -u "elastic:$$ELASTIC_PASSWORD" \
+          "https://$$ES_HOST:$$ES_PORT/_security/user/$$NEW_USER_NAME" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"password\": \"$$NEW_USER_PASSWORD\",
+            \"roles\": $$NEW_USER_ROLES
+          }"
 
         # Check exit code
         if [ $$? -eq 0 ]; then
@@ -168,7 +165,8 @@ services:
     networks:
       - artemis-network  
     build:
-      context: ./mongodb
+      context: .
+      dockerfile: ./mongodb/Dockerfile
     ports:
       - "${MONGODB_PORT:-27017}:27017"
     volumes:
@@ -192,7 +190,8 @@ services:
     container_name: artemis-kafka
     image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-kafka:${IMAGE_TAG:-latest}
     build:
-      context: ./kafka
+      context: .
+      dockerfile: ./kafka/Dockerfile
       args:
         CERT_DIR: /certs
     networks:
@@ -212,9 +211,9 @@ services:
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       # SSL configuration
-      KAFKA_SSL_KEYSTORE_LOCATION: /certs/kafka.keystore.jks
+      KAFKA_SSL_KEYSTORE_LOCATION: /certs/kafka/kafka.keystore.jks
       KAFKA_SSL_KEYSTORE_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
-      KAFKA_SSL_TRUSTSTORE_LOCATION: /certs/kafka.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /certs/kafka/kafka.truststore.jks
       KAFKA_SSL_TRUSTSTORE_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
     volumes:
       - kafka-data:/var/lib/kafka/data
@@ -231,7 +230,9 @@ services:
       artemis-network:
         aliases: 
           - zookeeper
-    build: ./zookeeper
+    build:
+      context: .
+      dockerfile: ./zookeeper/Dockerfile
     ports:
       - "${ZOOKEEPER_PORT:-2181}:2181"
     volumes:
@@ -253,7 +254,9 @@ services:
   sqlserver:
     container_name: artemis-sqlserver 
     image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-sqlserver:${IMAGE_TAG:-latest}
-    build: ./sqlserver
+    build:
+      context: .
+      dockerfile: ./sqlserver/Dockerfile
     ports:
       - "${SQLSERVER_PORT:-1433}:1433"
       - "1434:1434/udp"   # SQL Browser Service

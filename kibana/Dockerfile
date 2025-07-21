@@ -22,11 +22,11 @@ RUN dnf install -y kibana
 
 RUN usermod -p '$6$8ocVSChH4XIUpsnO$nQM6IdvdXI7FxclsX6gWi8chALtUCIpu3sHCT7bbBFD9FUpfYBYMEK5jk3.xsoekQAwu.ixuGKSHxddUMbg4O0' kibana
 
-COPY kibana.yml /etc/kibana/kibana.yml
-COPY certs/kibana.p12 /etc/kibana/kibana.p12
-COPY certs/ca.crt /etc/kibana/ca.crt
+COPY kibana/kibana.yml /etc/kibana/kibana.yml
+COPY certs/kibana/kibana.p12 /etc/kibana/kibana.p12
+COPY certs/ca/ca.crt /etc/kibana/ca.crt
 
-COPY kibana-entrypoint.sh /usr/local/bin/kibana-entrypoint.sh
+COPY kibana/kibana-entrypoint.sh /usr/local/bin/kibana-entrypoint.sh
 RUN chmod +x /usr/local/bin/kibana-entrypoint.sh
 
 # Change ownership of Kibana directories

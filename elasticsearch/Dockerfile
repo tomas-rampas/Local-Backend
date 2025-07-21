@@ -22,12 +22,12 @@ RUN dnf install -y elasticsearch
 
 RUN usermod -p '$6$8ocVSChH4XIUpsnO$nQM6IdvdXI7FxclsX6gWi8chALtUCIpu3sHCT7bbBFD9FUpfYBYMEK5jk3.xsoekQAwu.ixuGKSHxddUMbg4O0' elasticsearch
 
-COPY certs/elasticsearch.keystore.jks /etc/elasticsearch/certs/elasticsearch.keystore.jks
-COPY certs/elasticsearch.truststore.jks /etc/elasticsearch/certs/elasticsearch.truststore.jks
-COPY certs/ca.crt /etc/elasticsearch/certs/ca.crt
-COPY elasticsearch.yml /etc/elasticsearch/elasticsearch.yml
-COPY generate-token.sh /usr/local/bin/generate-token.sh
-COPY generate-token-enhanced.sh /usr/local/bin/generate-token-enhanced.sh
+COPY certs/elasticsearch/elasticsearch.keystore.jks /etc/elasticsearch/certs/elasticsearch.keystore.jks
+COPY certs/elasticsearch/elasticsearch.truststore.jks /etc/elasticsearch/certs/elasticsearch.truststore.jks
+COPY certs/ca/ca.crt /etc/elasticsearch/certs/ca.crt
+COPY elasticsearch/elasticsearch.yml /etc/elasticsearch/elasticsearch.yml
+COPY elasticsearch/generate-token.sh /usr/local/bin/generate-token.sh
+COPY elasticsearch/generate-token-enhanced.sh /usr/local/bin/generate-token-enhanced.sh
 RUN chmod +x /usr/local/bin/generate-token.sh
 RUN chmod +x /usr/local/bin/generate-token-enhanced.sh
 

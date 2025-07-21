@@ -18,12 +18,12 @@ RUN groupadd -r kafka && \
     chown -R kafka:kafka /opt/kafka /var/lib/kafka
 
 # Create startup script that handles environment variables
-COPY start-kafka.sh /opt/kafka/start-kafka.sh
+COPY kafka/start-kafka.sh /opt/kafka/start-kafka.sh
 RUN chmod +x /opt/kafka/start-kafka.sh && \
     chown kafka:kafka /opt/kafka/start-kafka.sh
 
 # Copy entrypoint script
-COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY kafka/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 9092 9093 9094
