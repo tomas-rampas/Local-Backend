@@ -40,7 +40,16 @@
       "Bash(for:*)",
       "Bash(do sed -i 's/\\r$//' \"$file\")",
       "Bash(done)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(sudo chown:*)",
+      "Bash(docker cp:*)",
+      "Bash(test:*)",
+      "Bash(./fix-docker-volumes.sh:*)",
+      "Bash(./docker-reset.sh:*)",
+      "Bash(docker:*)",
+      "Bash(sudo service:*)",
+      "Bash(systemctl:*)",
+      "Bash(curl:*)"
     ],
     "deny": []
   }

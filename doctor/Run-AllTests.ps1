@@ -617,7 +617,4 @@ $exitCode = switch ($TestResults.OverallStatus) {
     default { 3 }
 }
 
-# Return results object for potential consumption by other scripts
-return $TestResults
-
 exit $exitCode

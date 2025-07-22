@@ -13,10 +13,8 @@ enabled=1
 gpgkey=https://www.mongodb.org/static/pgp/server-6.0.asc
 EOF
 
-# Install MongoDB and create required directories
-RUN dnf install -y mongodb-org && \
-    mkdir -p /data/db /data/configdb && \
-    chown -R 999:999 /data/db /data/configdb
+# Install MongoDB (let Docker handle volume directories)
+RUN dnf install -y mongodb-org
 
 # Remove the systemctl line since it won't work in Docker
 

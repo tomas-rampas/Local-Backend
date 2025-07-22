@@ -48,7 +48,16 @@ RUN chown elasticsearch:elasticsearch /shared
 # Set permissions: writable by elasticsearch, readable by everyone
 RUN chmod 755 /shared
 
-# Switch to the elasticsearch user
+# Ensure the Elasticsearch data directory exists with correct permissions
+RUN mkdir -p /var/lib/elasticsearch
+RUN chown -R elasticsearch:elasticsearch /var/lib/elasticsearch
+RUN chmod 755 /var/lib/elasticsearch
+
+# Copy and set up the entrypoint script
+COPY elasticsearch/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Switch to elasticsearch user for keystore operations
 USER elasticsearch
 
 ARG ELASTIC_PASSWORD
@@ -62,4 +71,7 @@ RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keysto
 RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keystore add xpack.security.transport.ssl.truststore.secure_password
 RUN echo "$ELASTIC_PASSWORD" | /usr/share/elasticsearch/bin/elasticsearch-keystore add bootstrap.password -x
 
-CMD ["/bin/sh", "-c", "/usr/local/bin/generate-token-enhanced.sh && /usr/share/elasticsearch/bin/elasticsearch"]
+# Switch back to root for the entrypoint script to handle permissions
+USER root
+
+CMD ["/usr/local/bin/docker-entrypoint.sh"]

@@ -27,13 +27,9 @@ RUN dnf -y update && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 
-# Create directory structure with least privilege, handle existing group/user
+# Create user but let Docker handle volume directories
 RUN groupadd -r mssql 2>/dev/null || true && \
-    useradd -r -g mssql mssql 2>/dev/null || true && \
-    mkdir -p /var/opt/mssql/data && \
-    mkdir -p /var/opt/mssql/backup && \
-    mkdir -p /var/opt/mssql/log && \
-    chown -R mssql:mssql /var/opt/mssql
+    useradd -r -g mssql mssql 2>/dev/null || true
 
 # Configure SQL Server with SA password and explicitly set Developer Edition
 RUN /opt/mssql/bin/mssql-conf set sqlagent.enabled true && \

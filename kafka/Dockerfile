@@ -11,11 +11,10 @@ RUN wget https://archive.apache.org/dist/kafka/3.6.1/kafka_2.13-3.6.1.tgz && \
     mv /opt/kafka_2.13-3.6.1 /opt/kafka && \
     rm kafka_2.13-3.6.1.tgz
 
-# Create a non-root user and directories
+# Create a non-root user (let Docker handle volume directories)  
 RUN groupadd -r kafka && \
     useradd -r -g kafka kafka && \
-    mkdir -p /var/lib/kafka/data && \
-    chown -R kafka:kafka /opt/kafka /var/lib/kafka
+    chown -R kafka:kafka /opt/kafka
 
 # Create startup script that handles environment variables
 COPY kafka/start-kafka.sh /opt/kafka/start-kafka.sh

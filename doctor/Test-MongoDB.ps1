@@ -266,7 +266,8 @@ if ($queryResult.Success) {
 
 # Test 8: Range Query
 Write-Host "Testing range queries..." -ForegroundColor Yellow
-$rangeQueryResult = Invoke-MongoCommand -Command "use $Database; db.$CollectionName.find({age: {\`$gte: 25, \`$lte: 32}})"
+$rangeQuery = "use $Database; db.$CollectionName.find({age: {\`$gte: 25, \`$lte: 32}})"
+$rangeQueryResult = Invoke-MongoCommand -Command $rangeQuery
 if ($rangeQueryResult.Success) {
     Write-TestResult "Range Query" $true "Age range query (25-32) executed successfully" -ResponseData $rangeQueryResult.Output
 } else {
@@ -284,7 +285,8 @@ if ($arrayQueryResult.Success) {
 
 # Test 10: Update Operations
 Write-Host "Testing document updates..." -ForegroundColor Yellow
-$updateResult = Invoke-MongoCommand -Command "use $Database; db.$CollectionName.updateOne({name: 'John Doe'}, {\`$set: {age: 31, last_updated: new Date()}})"
+$updateQuery = "use $Database; db.$CollectionName.updateOne({name: 'John Doe'}, {\`$set: {age: 31, last_updated: new Date()}})"
+$updateResult = Invoke-MongoCommand -Command $updateQuery
 if ($updateResult.Success) {
     Write-TestResult "Update Document" $true "Document updated successfully" -ResponseData $updateResult.Output
 } else {
@@ -338,7 +340,8 @@ if ($listIndexResult.Success) {
 Write-Host "Testing text search..." -ForegroundColor Yellow
 $createTextIndexResult = Invoke-MongoCommand -Command "use $Database; db.$CollectionName.createIndex({name: 'text', skills: 'text'})"
 if ($createTextIndexResult.Success) {
-    $textSearchResult = Invoke-MongoCommand -Command "use $Database; db.$CollectionName.find({\`$text: {\`$search: 'Python'}})"
+    $textSearchQuery = "use $Database; db.$CollectionName.find({\`$text: {\`$search: 'Python'}})"
+    $textSearchResult = Invoke-MongoCommand -Command $textSearchQuery
     if ($textSearchResult.Success) {
         Write-TestResult "Text Search" $true "Text search executed successfully" -ResponseData $textSearchResult.Output
     } else {

@@ -12,12 +12,10 @@ RUN wget https://archive.apache.org/dist/kafka/3.6.1/kafka_2.13-3.6.1.tgz && \
     mv /opt/kafka_2.13-3.6.1 /opt/kafka && \
     rm kafka_2.13-3.6.1.tgz
 
-# Create a non-root user and directories
+# Create a non-root user (let Docker handle volume directories)
 RUN groupadd -r kafka && \
     useradd -r -g kafka kafka && \
-    mkdir -p /tmp/zookeeper/data /tmp/zookeeper/logs && \
-    chown -R kafka:kafka /opt/kafka /tmp/zookeeper && \
-    chmod -R 755 /tmp/zookeeper
+    chown -R kafka:kafka /opt/kafka
 
 # Create healthcheck script directly in the image
 RUN echo '#!/bin/bash' > /opt/kafka/healthcheck.sh && \

@@ -42,8 +42,8 @@ services:
       ELASTIC_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
     volumes:
       # Use named volumes for better portability and management
-      - elasticsearch-data:/usr/share/elasticsearch/data
-      - elasticsearch-logs:/var/log/elasticsearch
+      - elasticsearch-data:/var/lib/elasticsearch:rw
+      - elasticsearch-logs:/var/log/elasticsearch:rw
       - shared-volume:/shared:rw  # Read-write access to shared volume
     healthcheck:
       <<: *healthcheck-defaults
@@ -198,7 +198,6 @@ services:
       artemis-network:
         aliases: 
           - kafka
-          - artemis-kafka
     depends_on:
       zookeeper:
         condition: service_healthy
@@ -216,7 +215,8 @@ services:
       KAFKA_SSL_TRUSTSTORE_LOCATION: /certs/kafka/kafka.truststore.jks
       KAFKA_SSL_TRUSTSTORE_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
     volumes:
-      - kafka-data:/var/lib/kafka/data
+      - kafka-data:/var/lib/kafka/data:rw
+      - kafka-logs:/opt/kafka/logs:rw
       - ./certs:/certs:ro
     healthcheck:
       <<: *healthcheck-defaults

@@ -32,10 +32,7 @@ RUN chmod +x /usr/local/bin/kibana-entrypoint.sh
 # Change ownership of Kibana directories
 RUN chown -R kibana:kibana /etc/kibana
 
-# Create the data directory and ensure proper permissions
-RUN mkdir -p /usr/share/kibana/data && \
-    chown -R kibana:kibana /usr/share/kibana/data && \
-    chmod -R 755 /usr/share/kibana/data
+# Data directory will be handled by Docker volume mount
 
 EXPOSE 5601
 

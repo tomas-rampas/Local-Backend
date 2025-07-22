@@ -21,8 +21,7 @@
 certs/*
 !certs/.gitkeep
 !certs/README.md
-!certs/Generate-AllCertificates.ps1
-!certs/Install-CACertificate.ps1
+!certs/*.ps1
 !certs/*/
 certs/*/*
 !certs/*/.gitkeep
