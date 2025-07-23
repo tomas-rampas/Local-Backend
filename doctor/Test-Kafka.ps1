@@ -75,7 +75,17 @@ function Write-TestResultsTable {
     
     Write-Host ""
     Write-Host $headerLine -ForegroundColor Gray
-    Write-Host ("│ " + "$ServiceName SERVICE TEST RESULTS".PadRight($maxCategoryWidth) + " │            │            │               │") -ForegroundColor White
+    
+    # Calculate total width for centered header to match the exact column structure
+    # Pattern: "│ " + Category($maxCategoryWidth) + " │ " + Tests(10) + " │ " + Success(10) + " │ " + AvgTime(13) + " │"
+    $totalInnerWidth = 1 + $maxCategoryWidth + 3 + 10 + 3 + 10 + 3 + 13 + 1  # 1+content+3 for each " │ " separator, final 1 for ending space
+    $headerText = "$ServiceName SERVICE TEST RESULTS"
+    $padding = [Math]::Max(0, ($totalInnerWidth - $headerText.Length) / 2)
+    $leftPadding = [Math]::Floor($padding)
+    $rightPadding = $totalInnerWidth - $headerText.Length - $leftPadding
+    $centeredHeader = "│" + (" " * $leftPadding) + $headerText + (" " * $rightPadding) + "│"
+    
+    Write-Host $centeredHeader -ForegroundColor White
     Write-Host $separatorLine -ForegroundColor Gray
     Write-Host ("│ " + "Category".PadRight($maxCategoryWidth) + " │ " + "Tests".PadRight(10) + " │ " + "Success".PadRight(10) + " │ " + "Avg Time".PadRight(13) + " │") -ForegroundColor Yellow
     Write-Host $separatorLine -ForegroundColor Gray

@@ -247,7 +247,17 @@ function Write-ServiceSummaryTable {
     
     Write-Host ""
     Write-Host $headerLine -ForegroundColor Gray
-    Write-Host ("│ " + "SERVICE PERFORMANCE SUMMARY".PadRight($maxServiceWidth) + " │            │            │            │                │") -ForegroundColor White
+    
+    # Calculate total width by creating a sample row and measuring it
+    $sampleRow = "│ " + "".PadRight($maxServiceWidth) + " │ " + "".PadRight(10) + " │ " + "".PadRight(10) + " │ " + "".PadRight(10) + " │ " + "".PadRight(14) + " │"
+    $totalInnerWidth = $sampleRow.Length - 2  # Subtract the border characters
+    $headerText = "SERVICE PERFORMANCE SUMMARY"
+    $padding = [Math]::Max(0, ($totalInnerWidth - $headerText.Length) / 2)
+    $leftPadding = [Math]::Floor($padding)
+    $rightPadding = $totalInnerWidth - $headerText.Length - $leftPadding
+    $centeredHeader = "│" + (" " * $leftPadding) + $headerText + (" " * $rightPadding) + "│"
+    
+    Write-Host $centeredHeader -ForegroundColor White
     Write-Host $separatorLine -ForegroundColor Gray
     Write-Host ("│ " + "Service".PadRight($maxServiceWidth) + " │ " + "Status".PadRight(10) + " │ " + "Tests".PadRight(10) + " │ " + "Duration".PadRight(10) + " │ " + "Success Rate".PadRight(14) + " │") -ForegroundColor Yellow
     Write-Host $separatorLine -ForegroundColor Gray
@@ -345,8 +355,105 @@ function Write-ServiceSummaryTable {
     Write-Host $overallRateStr.PadRight(14) -ForegroundColor $overallRateColor -NoNewline
     Write-Host " │" -ForegroundColor Gray
     
+    # Add footer note section that connects properly to the table
+    $footerText = "⬆ Scroll up to see detailed test results and performance analysis"
+    $footerLeftPadding = 2  # Small left margin
+    $footerRightPadding = $totalInnerWidth - $footerText.Length - $footerLeftPadding
+    $leftAlignedFooter = "│" + (" " * $footerLeftPadding) + $footerText + (" " * $footerRightPadding) + "│"
+    
+    # Use the same separator structure as the table
+    $footerSeparatorLine = "├" + ("─" * ($maxServiceWidth + 2)) + "┼" + ("─" * 12) + "┼" + ("─" * 12) + "┼" + ("─" * 12) + "┼" + ("─" * 16) + "┤"
+    
+    Write-Host $footerSeparatorLine -ForegroundColor Gray
+    Write-Host $leftAlignedFooter -ForegroundColor Yellow
     Write-Host $footerLine -ForegroundColor Gray
     Write-Host ""
+}
+
+function Write-DetailedTestBreakdown {
+    param(
+        [array]$ServicesToTest,
+        [hashtable]$ServiceResults
+    )
+    
+    if (-not $ServicesToTest -or $ServicesToTest.Count -eq 0) {
+        return
+    }
+    
+    Write-Host ""
+    Write-Host "📊 DETAILED TEST PERFORMANCE BREAKDOWN" -ForegroundColor Yellow
+    Write-Host ""
+    
+    foreach ($service in $ServicesToTest) {
+        if (-not $ServiceResults.ContainsKey($service)) {
+            continue
+        }
+        
+        $result = $ServiceResults[$service]
+        if (-not $result.Tests -or $result.Tests.Count -eq 0) {
+            continue
+        }
+        
+        # Service header
+        $serviceHeader = "$($service.ToUpper()) SERVICE - INDIVIDUAL TEST RESULTS"
+        Write-Host $serviceHeader -ForegroundColor Cyan
+        Write-Host ("─" * $serviceHeader.Length) -ForegroundColor Gray
+        
+        # Sort tests by duration (slowest first) and group by category
+        $sortedTests = $result.Tests | Sort-Object DurationSeconds -Descending
+        $testsByCategory = $sortedTests | Group-Object Category | Sort-Object Name
+        
+        foreach ($category in $testsByCategory) {
+            $categoryPassed = ($category.Group | Where-Object { $_.Success }).Count
+            $categoryTotal = $category.Group.Count
+            $categoryAvgTime = [math]::Round(($category.Group | Measure-Object DurationSeconds -Average).Average, 2)
+            
+            Write-Host "  📂 $($category.Name) " -ForegroundColor Blue -NoNewline
+            Write-Host "($categoryPassed/$categoryTotal passed, avg: ${categoryAvgTime}s)" -ForegroundColor Gray
+            
+            foreach ($test in $category.Group) {
+                $statusIcon = if ($test.Success) { "✓" } else { "✗" }
+                $statusColor = if ($test.Success) { "Green" } else { "Red" }
+                $durationStr = if ($test.DurationSeconds -lt 1) { "$($test.DurationMs)ms" } else { "$($test.DurationSeconds)s" }
+                
+                Write-Host "    [$statusIcon] " -ForegroundColor $statusColor -NoNewline
+                Write-Host "$($test.TestName.PadRight(35)) " -NoNewline
+                Write-Host "($durationStr)" -ForegroundColor Cyan -NoNewline
+                
+                if ($test.Details) {
+                    Write-Host " - $($test.Details)" -ForegroundColor Gray
+                } else {
+                    Write-Host ""
+                }
+                
+                if (-not $test.Success -and $test.ErrorMessage) {
+                    Write-Host "        ⚠ Error: $($test.ErrorMessage)" -ForegroundColor Red
+                }
+            }
+            Write-Host ""
+        }
+        
+        # Service summary statistics
+        $servicePassed = ($result.Tests | Where-Object { $_.Success }).Count
+        $serviceTotal = $result.Tests.Count
+        $serviceDuration = Format-Duration $result.Duration
+        $slowestTest = $sortedTests | Select-Object -First 1
+        $fastestTest = $sortedTests | Sort-Object DurationSeconds | Select-Object -First 1
+        
+        Write-Host "  📈 Service Statistics:" -ForegroundColor Yellow
+        Write-Host "    • Total Tests: $serviceTotal" -ForegroundColor Gray
+        Write-Host "    • Passed: $servicePassed" -ForegroundColor Gray
+        Write-Host "    • Total Duration: $serviceDuration" -ForegroundColor Gray
+        if ($slowestTest) {
+            $slowestTime = if ($slowestTest.DurationSeconds -lt 1) { "$($slowestTest.DurationMs)ms" } else { "$($slowestTest.DurationSeconds)s" }
+            Write-Host "    • Slowest Test: $($slowestTest.TestName) ($slowestTime)" -ForegroundColor Gray
+        }
+        if ($fastestTest -and $fastestTest.TestName -ne $slowestTest.TestName) {
+            $fastestTime = if ($fastestTest.DurationSeconds -lt 1) { "$($fastestTest.DurationMs)ms" } else { "$($fastestTest.DurationSeconds)s" }
+            Write-Host "    • Fastest Test: $($fastestTest.TestName) ($fastestTime)" -ForegroundColor Gray
+        }
+        Write-Host ""
+    }
 }
 
 function Format-Duration {
@@ -723,8 +830,8 @@ if ($slowestService) {
     Write-Host "$($slowestService.Key) ($(Format-Duration $slowestService.Value))" -ForegroundColor Yellow
 }
 
-# Display structured cross-service summary table
-Write-ServiceSummaryTable -ServicesToTest $ServicesToTest -ServiceResults $TestResults.ServiceTests -Statistics $TestResults.Statistics
+# Display detailed individual test performance breakdown
+Write-DetailedTestBreakdown -ServicesToTest $ServicesToTest -ServiceResults $TestResults.ServiceTests
 
 Write-Host "🎯 OVERALL ASSESSMENT" -ForegroundColor Yellow
 Write-Host "Status: " -NoNewline
@@ -776,6 +883,9 @@ if ($OutputFormat -ne "Console") {
 
 Write-Host ""
 Write-Header "TEST SUITE COMPLETED"
+
+# Display final summary table as the last output
+Write-ServiceSummaryTable -ServicesToTest $ServicesToTest -ServiceResults $TestResults.ServiceTests -Statistics $TestResults.Statistics
 
 # Set exit code based on results
 $exitCode = switch ($TestResults.OverallStatus) {
