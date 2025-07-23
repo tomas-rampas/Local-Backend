@@ -23,49 +23,143 @@ This project provides a containerized backend infrastructure stack designed for 
 
 - Docker Desktop installed and running
 - Docker Compose v3.8 or higher
-- PowerShell (for Windows automation scripts)
+- **PowerShell 7** (for cross-platform automation scripts and testing)
+  - Windows: `winget install Microsoft.Powershell`
+  - macOS: `brew install --cask powershell`
+  - Linux: See installation guide in Testing section below
+- **OpenSSL** (for certificate generation)
+- **Java JDK** (optional, for JKS keystore generation)
 - At least 8GB RAM available for containers
 
 ### 1. Clone and Setup
 
 ```bash
-git clone https://github.com/${GIT_HUB_USER}/Local-Backend.git
+git clone https://github.com/your-username/Local-Backend.git
 cd Local-Backend
 ```
 
 ### 2. Environment Configuration
 
-Create a `.env` file in the project root:
-
-```env
-# Registry Configuration
-REGISTRY_PREFIX=ghcr.io/${GIT_HUB_USER}
-IMAGE_TAG=latest
-
-# Security Configuration
-LOCAL_BACKEND_BOOTSTRAP_PASSWORD=changeme123!
-```
-
-### 3. Start Services
+Copy the example environment file and adjust values as needed:
 
 ```bash
-# Start all services
+cp .env_example .env
+```
+
+Edit the `.env` file with your configuration:
+
+```env
+# Artemis Backend Environment Configuration
+# Copy this file to .env and adjust values as needed
+
+# Registry Configuration
+REGISTRY_PREFIX=ghcr.io/%user-name%
+IMAGE_TAG=v1.2
+
+# Security Configuration
+LOCAL_BACKEND_BOOTSTRAP_PASSWORD=changeme
+SQLSERVER_SA_PASSWORD=%PASSWORD%
+KIBANA_ENCRYPTION_KEY=%ENCRYPTYION_KEY%
+
+# Service Ports (customize if needed to avoid conflicts)
+ELASTICSEARCH_PORT=9200
+ELASTICSEARCH_TRANSPORT_PORT=9300
+KIBANA_PORT=5601
+MONGODB_PORT=27017
+KAFKA_EXTERNAL_PORT=9094
+ZOOKEEPER_PORT=2181
+SQLSERVER_PORT=1433
+
+# Elasticsearch User Configuration
+ES_NEW_USER_NAME=artemis
+ES_NEW_USER_ROLES='["logstash_admin", "kibana_user"]'
+
+# MongoDB Configuration
+MONGODB_ENABLE_AUTHENTICATION=false
+
+# SQL Server Configuration
+SQLSERVER_EDITION=Developer  # Options: Express, Developer, Standard, Enterprise
+
+# Volume Configuration
+SHARED_VOLUME_PATH=./shared
+
+# Network Configuration (uncomment if you need custom subnet)
+# NETWORK_SUBNET=172.28.0.0/16
+# NETWORK_GATEWAY=172.28.0.1
+# Alternative subnets if the above conflicts:
+# - 10.100.0.0/16
+# - 192.168.100.0/24
+# - 172.30.0.0/16
+```
+
+**Important**: Replace the following placeholders:
+- `%user-name%` - Your GitHub username or registry namespace
+- `%PASSWORD%` - A secure password for SQL Server SA account
+- `%ENCRYPTYION_KEY%` - A 32-byte encryption key for Kibana (you can generate one with: `openssl rand -hex 32`)
+
+### 3. Generate Certificates (First Time)
+
+```powershell
+# Generate all SSL/TLS certificates
+.\certs\Generate-AllCertificates.ps1
+
+# For Linux/macOS
+./certs/generate-all-certificates.sh
+```
+
+### 4. Start Services
+
+```bash
+# Build images and start all services (first time or when Dockerfiles change)
+docker-compose up -d --build
+
+# This command:
+# - Builds all Docker images from source
+# - Creates and starts all containers
+# - Runs in detached mode (-d)
+
+# Start services when images are already built
 docker-compose up -d
+
+# This command:
+# - Uses existing built images
+# - Creates and starts all containers
+# - Faster than --build option
+
+# Stop all services
+docker-compose down
+
+# This command:
+# - Stops all running containers
+# - Removes containers and networks
+# - Preserves volumes and data
+
+# Stop services and remove all data (DESTRUCTIVE!)
+docker-compose down -v
+
+# This command with -v flag:
+# - Stops all running containers
+# - Removes containers and networks
+# - DELETES all volumes and persistent data
+# - Use with caution - all data will be lost!
 
 # View logs
 docker-compose logs -f
 
 # Check service status
 docker-compose ps
+
+# Run health tests (optional)
+pwsh ./doctor/Run-AllTests.ps1
 ```
 
-### 4. Access Services
+### 5. Access Services
 
-- **Elasticsearch**: https://localhost:9200 (elastic/changeme123!)
+- **Elasticsearch**: https://localhost:9200 (elastic/changeme)
 - **Kibana**: http://localhost:5601
-- **MongoDB**: mongodb://localhost:27017
-- **Kafka**: localhost:9094
-- **SQL Server**: localhost:1433
+- **MongoDB**: mongodb://localhost:27017 (no auth in dev mode)
+- **Kafka**: localhost:9094 (EXTERNAL listener)
+- **SQL Server**: localhost:1433 (sa/[YOUR_PASSWORD])
 
 ## 🔧 Configuration
 
@@ -73,9 +167,16 @@ docker-compose ps
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `REGISTRY_PREFIX` | `ghcr.io/${GIT_HUB_USER}` | Docker registry prefix for images |
-| `IMAGE_TAG` | `latest` | Version tag for Docker images |
-| `LOCAL_BACKEND_BOOTSTRAP_PASSWORD` | - | Master password for Elasticsearch and other services |
+| `REGISTRY_PREFIX` | `ghcr.io/%user-name%` | Docker registry prefix for images |
+| `IMAGE_TAG` | `v1.2` | Version tag for Docker images |
+| `LOCAL_BACKEND_BOOTSTRAP_PASSWORD` | `changeme` | Bootstrap password for Elasticsearch |
+| `SQLSERVER_SA_PASSWORD` | `%PASSWORD%` | SQL Server SA password (must be set) |
+| `KIBANA_ENCRYPTION_KEY` | `%ENCRYPTYION_KEY%` | Kibana encryption key (generate with `openssl rand -hex 32`) |
+| `ES_NEW_USER_NAME` | `artemis` | New Elasticsearch user name |
+| `ES_NEW_USER_ROLES` | `["logstash_admin", "kibana_user"]` | Roles for new Elasticsearch user |
+| `MONGODB_ENABLE_AUTHENTICATION` | `false` | MongoDB authentication setting |
+| `SQLSERVER_EDITION` | `Developer` | SQL Server edition (Express, Developer, Standard, Enterprise) |
+| `SHARED_VOLUME_PATH` | `./shared` | Path for shared volume between services |
 
 ### Security Features
 
@@ -223,26 +324,77 @@ All service data is persisted using Docker volumes:
 
 ### Certificate Management
 
-The project includes comprehensive SSL/TLS certificate management:
+The project includes comprehensive SSL/TLS certificate management with automated generation:
 
 ```
 certs/
-├── ca.crt                    # Certificate Authority
-├── ca.key                    # CA Private Key
-├── elasticsearch.crt         # Elasticsearch Certificate
-├── elasticsearch.key         # Elasticsearch Private Key
-├── elasticsearch.p12         # PKCS#12 format
-├── kibana.crt               # Kibana Certificate
-├── kibana.key               # Kibana Private Key
-├── kafka.keystore.jks       # Kafka Keystore
-└── kafka.truststore.jks     # Kafka Truststore
+├── Generate-AllCertificates.ps1  # Master certificate generation script
+├── Clean-AllCertificates.ps1     # Certificate cleanup script
+├── Install-CACertificate.ps1     # CA installation for Windows
+├── README.md                     # Comprehensive certificate documentation
+├── ca/                           # Certificate Authority
+│   ├── ca.crt                   # CA certificate (sysSDSEnvCALocal)
+│   ├── ca.key                   # CA private key
+│   └── ca.pfx                   # CA PFX for development signing
+├── elasticsearch/               # Elasticsearch certificates
+│   ├── elasticsearch.crt        # Service certificate
+│   ├── elasticsearch.key        # Service private key
+│   ├── elasticsearch.p12        # PKCS#12 format
+│   ├── elasticsearch.keystore.jks  # Java keystore
+│   └── elasticsearch.truststore.jks # Java truststore
+├── kibana/                      # Kibana certificates
+│   ├── kibana.crt              # Service certificate
+│   ├── kibana.key              # Service private key
+│   └── kibana.p12              # PKCS#12 format
+├── kafka/                       # Kafka certificates
+│   ├── kafka.keystore.jks      # Java keystore
+│   └── kafka.truststore.jks    # Java truststore
+└── env/                         # Environment certificates (development)
+    ├── sysSDSEnvLocal.crt      # Environment certificate
+    ├── sysSDSEnvLocal.key      # Environment private key
+    └── sysSDSEnvLocal.pfx      # PFX for development use
 ```
 
-### PowerShell Certificate Scripts
+### Certificate Generation and Management
 
-- `Create-Ceritifcatesp12.ps1`: Generate PKCS#12 certificates
-- `Create-Jks.ps1`: Create Java KeyStore files
-- `Install-CACertificate.ps1`: Install CA certificate on Windows
+```powershell
+# Generate all certificates with default settings
+.\certs\Generate-AllCertificates.ps1
+
+# Custom CA name and certificate passwords  
+.\certs\Generate-AllCertificates.ps1 -CaName "MyCompanyCA" -CertPassword "SecurePass123"
+
+# Skip CA installation to Windows trust store
+.\certs\Generate-AllCertificates.ps1 -InstallCA:$false
+
+# Clean all certificates (preview mode)
+.\certs\Clean-AllCertificates.ps1 -WhatIf
+
+# Force clean all certificates and remove CA from trust store
+.\certs\Clean-AllCertificates.ps1 -Force -UninstallCA
+```
+
+### Cross-Platform Certificate Support
+
+For Linux/macOS development:
+```bash
+# Linux/Unix certificate generation
+./certs/generate-all-certificates.sh
+
+# Make scripts executable
+chmod +x certs/*.ps1
+```
+
+### ASP.NET Development Features
+
+The certificate system supports ASP.NET development with certificate signing capabilities:
+
+- **CA Certificate**: `sysSDSEnvCALocal` with proper CA extensions for certificate issuance
+- **Environment Certificate**: `sysSDSEnvLocal` for local development (cannot be used for signing)
+- **Windows Integration**: Automatic installation to both Root and Personal certificate stores
+- **Development Signing**: CA certificate available with private key for ASP.NET certificate signing
+
+See `certs/README.md` for comprehensive PowerShell verification scripts and troubleshooting commands.
 
 ### Elasticsearch Security
 
@@ -260,13 +412,54 @@ certs/
 | `build-and-push-images.ps1` | Build and optionally push all images | `.\build-and-push-images.ps1 -PushImages` |
 | `push-to-github-registry.ps1` | Upload to GitHub Container Registry | `.\push-to-github-registry.ps1 -GitHubUsername "user"` |
 
-### Certificate Management
+### Certificate Management Scripts
 
-| Script | Purpose | Location |
-|--------|---------|----------|
-| `Create-Ceritifcatesp12.ps1` | Generate PKCS#12 certificates | `certs/` |
-| `Create-Jks.ps1` | Create Java KeyStore files | `certs/` |
-| `Install-CACertificate.ps1` | Install CA on Windows | `certs/` |
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `Generate-AllCertificates.ps1` | Master certificate generation script | `.\certs\Generate-AllCertificates.ps1` |
+| `Clean-AllCertificates.ps1` | Certificate cleanup and removal | `.\certs\Clean-AllCertificates.ps1 -Force` |
+| `Install-CACertificate.ps1` | Install CA certificate on Windows | `.\certs\Install-CACertificate.ps1` |
+| `generate-all-certificates.sh` | Linux/macOS certificate generation | `./certs/generate-all-certificates.sh` |
+
+### Testing and Validation Suite
+
+The `doctor/` directory contains comprehensive cross-platform testing scripts:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `Run-AllTests.ps1` | Complete test suite for all services | `pwsh ./doctor/Run-AllTests.ps1` |
+| `Check-BackendHealth.ps1` | System diagnostics and health checks | `pwsh ./doctor/Check-BackendHealth.ps1` |
+| `Test-Elasticsearch.ps1` | Elasticsearch functional tests | `pwsh ./doctor/Test-Elasticsearch.ps1` |
+| `Test-MongoDB.ps1` | MongoDB functional tests | `pwsh ./doctor/Test-MongoDB.ps1` |
+| `Test-Kafka.ps1` | Kafka functional tests | `pwsh ./doctor/Test-Kafka.ps1` |
+| `Test-SqlServer.ps1` | SQL Server functional tests | `pwsh ./doctor/Test-SqlServer.ps1` |
+
+#### Cross-Platform Testing Requirements
+
+**PowerShell 7 Installation:**
+```bash
+# Linux (Ubuntu/Debian)
+wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+sudo dpkg -i packages-microsoft-prod.deb
+sudo apt-get update && sudo apt-get install -y powershell
+
+# macOS
+brew install --cask powershell
+
+# Windows
+winget install --id Microsoft.Powershell --source winget
+```
+
+**Running Tests:**
+```bash
+# Cross-platform execution
+pwsh -File ./doctor/Run-AllTests.ps1
+
+# With options
+pwsh ./doctor/Run-AllTests.ps1 -IncludeServices "elasticsearch,mongodb"
+pwsh ./doctor/Run-AllTests.ps1 -OutputFormat JSON -OutputFile "results.json"
+pwsh ./doctor/Run-AllTests.ps1 -Parallel  # Experimental parallel execution
+```
 
 ## 🚨 Troubleshooting
 
@@ -287,19 +480,44 @@ docker-compose logs [service-name]
 #### Elasticsearch Connection Issues
 ```bash
 # Check Elasticsearch health
-curl -k -u elastic:your-password https://localhost:9200/_cluster/health
+curl -k -u elastic:changeme https://localhost:9200/_cluster/health
 
-# Verify certificates
-docker-compose exec elasticsearch ls -la /etc/elasticsearch/certs/
+# Verify certificates are properly mounted
+docker-compose exec elasticsearch ls -la /usr/share/elasticsearch/config/certs/
+
+# Test SSL connection
+curl -k --cert-type P12 --cert /path/to/elasticsearch.p12:changeme https://localhost:9200
 ```
 
 #### Kibana Authentication Problems
 ```bash
-# Check token file
+# Check token file exists
 docker-compose exec kibana cat /shared/kibana_service_token.txt
 
 # Restart Elasticsearch to regenerate token
 docker-compose restart elasticsearch
+
+# Check Kibana logs
+docker-compose logs kibana
+```
+
+#### Certificate Issues
+```powershell
+# Verify certificates are installed in Windows store
+Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*sysSDSEnv*" }
+
+# Check certificate thumbprints for configuration
+$caThumbprint = (Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*sysSDSEnvCALocal*" }).Thumbprint
+Write-Host "CA Thumbprint: $caThumbprint"
+
+# Test certificate file integrity
+if (Test-Path ".\certs\ca\ca.crt") {
+    openssl x509 -in .\certs\ca\ca.crt -text -noout
+}
+
+# Regenerate certificates if corrupted
+.\certs\Clean-AllCertificates.ps1 -Force
+.\certs\Generate-AllCertificates.ps1
 ```
 
 #### Memory Issues
@@ -460,8 +678,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ### Documentation
 
 - [Docker Images Guide](README-Docker-Images.md)
-- [GitHub Registry Guide](GitHub-Registry-Guide.md)
+- [Certificate Management Guide](certs/README.md) - Comprehensive certificate documentation with PowerShell verification scripts
+- [Testing and Diagnostics Guide](doctor/README.md) - Cross-platform testing suite documentation
 - [Elasticsearch Token Generation](elasticsearch/TOKEN-GENERATION-README.md)
+- [CLAUDE.md](CLAUDE.md) - Complete project instructions and configuration guide
 
 ### Getting Help
 
@@ -485,11 +705,26 @@ docker-compose restart elasticsearch
 # Scale a service
 docker-compose up -d --scale kafka=2
 
-# Remove all containers and volumes
-docker-compose down -v
+# Rebuild and restart a specific service
+docker-compose up -d --build elasticsearch
 
-# Rebuild and restart
-docker-compose up -d --build
+# Recreate containers without rebuilding images
+docker-compose up -d --force-recreate
+
+# Run comprehensive health tests
+pwsh ./doctor/Run-AllTests.ps1
+
+# Check individual service health
+pwsh ./doctor/Test-Elasticsearch.ps1
+pwsh ./doctor/Test-MongoDB.ps1
+pwsh ./doctor/Test-Kafka.ps1
+pwsh ./doctor/Test-SqlServer.ps1
+
+# Generate fresh certificates
+.\certs\Generate-AllCertificates.ps1
+
+# Monitor resource usage
+docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 ```
 
 ---

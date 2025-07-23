@@ -3,8 +3,10 @@
 # Removes all certificate files and optionally uninstalls CA from Windows trust store
 
 param(
-    [string]$CaName = "ArtemisLocalCA",
+    [string]$CaName = "sysSDSEnvCALocal",
+    [string]$EnvLocalName = "sysSDSEnvLocal",
     [switch]$UninstallCA = $false,
+    [switch]$UninstallEnvLocal = $false,
     [switch]$Force = $false,
     [switch]$WhatIf = $false
 )
@@ -145,9 +147,14 @@ try {
         Write-Host "  - MongoDB: $CertsDir\mongodb\" -ForegroundColor Gray
         Write-Host "  - SQL Server: $CertsDir\sqlserver\" -ForegroundColor Gray
         Write-Host "  - Zookeeper: $CertsDir\zookeeper\" -ForegroundColor Gray
+        Write-Host "  - Environment: $CertsDir\env\" -ForegroundColor Gray
         
         if ($UninstallCA) {
             Write-Host "  - CA '$CaName' will be removed from Windows trust store" -ForegroundColor Red
+        }
+        
+        if ($UninstallEnvLocal) {
+            Write-Host "  - Certificate '$EnvLocalName' will be removed from Windows trust store" -ForegroundColor Red
         }
         
         Write-Host ""
@@ -169,6 +176,13 @@ try {
         Write-Host ""
     }
     
+    # Remove sysSDSEnvLocal certificate from trust store if requested
+    if ($UninstallEnvLocal) {
+        Write-Host "Step 2: Removing sysSDSEnvLocal certificate from Windows trust store..." -ForegroundColor Cyan
+        Remove-CAFromTrustStore $EnvLocalName
+        Write-Host ""
+    }
+    
     # Remove certificate files from each service directory
     $services = @(
         @{ Name = "CA"; Dir = Join-Path $CertsDir "ca" },
@@ -177,7 +191,8 @@ try {
         @{ Name = "Kafka"; Dir = Join-Path $CertsDir "kafka" },
         @{ Name = "MongoDB"; Dir = Join-Path $CertsDir "mongodb" },
         @{ Name = "SQL Server"; Dir = Join-Path $CertsDir "sqlserver" },
-        @{ Name = "Zookeeper"; Dir = Join-Path $CertsDir "zookeeper" }
+        @{ Name = "Zookeeper"; Dir = Join-Path $CertsDir "zookeeper" },
+        @{ Name = "Environment"; Dir = Join-Path $CertsDir "env" }
     )
     
     foreach ($service in $services) {
@@ -206,6 +221,10 @@ try {
         
         if ($UninstallCA) {
             Write-Host "✓ CA '$CaName' removed from Windows trust store" -ForegroundColor Green
+        }
+        
+        if ($UninstallEnvLocal) {
+            Write-Host "✓ Certificate '$EnvLocalName' removed from Windows trust store" -ForegroundColor Green
         }
         
         Write-Host ""

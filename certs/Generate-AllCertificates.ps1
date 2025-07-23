@@ -3,7 +3,7 @@
 # Generates CA and all service certificates in organized structure
 
 param(
-    [string]$CaName = "ArtemisLocalCA",
+    [string]$CaName = "sysSDSEnvCALocal",
     [string]$CaKeyPassword = "changeme",
     [string]$CertPassword = "changeme", 
     [int]$CaValidityDays = 3650,
@@ -12,6 +12,8 @@ param(
     [string]$OrganizationalUnit = "Development",
     [string]$Country = "US",
     [switch]$InstallCA = $true,
+    [switch]$InstallEnvLocal = $true,
+    [switch]$InstallWithPrivateKey = $true,
     [switch]$BackupExisting = $true,
     [switch]$SkipIfExists = $false
 )
@@ -75,6 +77,62 @@ function Test-CAInTrustStore {
     }
 }
 
+# Function to get certificate thumbprint from Windows trust store
+function Get-CertThumbprintFromTrustStore {
+    param([string]$CaCommonName)
+    try {
+        $cert = Get-ChildItem -Path "Cert:\LocalMachine\Root" | Where-Object { $_.Subject -like "*CN=$CaCommonName*" } | Select-Object -First 1
+        if ($cert) {
+            return $cert.Thumbprint
+        }
+        return $null
+    } catch {
+        return $null
+    }
+}
+
+# Function to install certificate with private key to Personal store (for development use)
+function Install-CertificateWithPrivateKey {
+    param(
+        [string]$PfxPath,
+        [string]$CertPassword,
+        [string]$CertificateName
+    )
+    
+    try {
+        if (-not (Test-Path $PfxPath)) {
+            Write-Warning "PFX file not found: $PfxPath"
+            return $false
+        }
+        
+        # Check if running as administrator
+        $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+        $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        
+        if (-not $isAdmin) {
+            Write-Warning "Administrator privileges required to install certificate with private key to machine store."
+            Write-Host "Please run this script as Administrator to install certificates with private keys." -ForegroundColor Yellow
+            return $false
+        }
+        
+        # Import certificate with private key to Personal store
+        $securePwd = ConvertTo-SecureString -String $CertPassword -Force -AsPlainText
+        $cert = Import-PfxCertificate -FilePath $PfxPath -CertStoreLocation "Cert:\LocalMachine\My" -Password $securePwd -Exportable
+        
+        Write-Host "✓ $CertificateName certificate with private key installed to Personal store" -ForegroundColor Green
+        Write-Host "  Certificate Thumbprint: $($cert.Thumbprint)" -ForegroundColor Gray
+        Write-Host "  Store Location: Cert:\LocalMachine\My" -ForegroundColor Gray
+        Write-Host "  Private Key Available: $($cert.HasPrivateKey)" -ForegroundColor Gray
+        
+        return $cert.Thumbprint
+        
+    } catch {
+        Write-Warning "Failed to install certificate with private key: $($_.Exception.Message)"
+        Write-Host "Manual installation may be required for development certificate access." -ForegroundColor Yellow
+        return $false
+    }
+}
+
 # Function to generate CA certificate
 function New-CACertificate {
     Write-Host "Step 1: Generating Certificate Authority (CA)..." -ForegroundColor Cyan
@@ -110,15 +168,50 @@ function New-CACertificate {
     & openssl genrsa -aes256 -out $caKeyFile -passout "pass:$CaKeyPassword" 2048
     if ($LASTEXITCODE -ne 0) { throw "Failed to generate CA private key" }
     
-    # Generate CA certificate
-    Write-Host "  Generating CA certificate..." -ForegroundColor Gray
+    # Create CA configuration file with proper CA extensions
+    Write-Host "  Creating CA configuration..." -ForegroundColor Gray
+    $caConfigFile = Join-Path $caDir "ca.cnf"
+    $caConfigContent = @"
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_ca
+prompt = no
+
+[req_distinguished_name]
+C = $Country
+O = $Organization
+OU = $OrganizationalUnit
+CN = $CaName
+
+[v3_ca]
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+"@
+    
+    Set-Content -Path $caConfigFile -Value $caConfigContent -Encoding UTF8
+    
+    # Generate CA certificate with proper CA extensions
+    Write-Host "  Generating CA certificate with CA extensions..." -ForegroundColor Gray
     $subject = "/C=$Country/O=$Organization/OU=$OrganizationalUnit/CN=$CaName"
-    & openssl req -x509 -new -nodes -key $caKeyFile -passin "pass:$CaKeyPassword" -sha256 -days $CaValidityDays -out $caCrtFile -subj $subject
+    & openssl req -x509 -new -nodes -key $caKeyFile -passin "pass:$CaKeyPassword" -sha256 -days $CaValidityDays -out $caCrtFile -subj $subject -config $caConfigFile -extensions v3_ca
     if ($LASTEXITCODE -ne 0) { throw "Failed to generate CA certificate" }
     
-    Write-Host "✓ CA certificate generated successfully" -ForegroundColor Green
+    # Generate CA PFX file for development use (contains both certificate and private key)
+    Write-Host "  Generating CA PFX file for development..." -ForegroundColor Gray
+    $caPfxFile = Join-Path $caDir "ca.pfx"
+    & openssl pkcs12 -export -out $caPfxFile -inkey $caKeyFile -in $caCrtFile -passin "pass:$CaKeyPassword" -passout "pass:$CertPassword"
+    if ($LASTEXITCODE -ne 0) { throw "Failed to generate CA PFX file" }
+    
+    # Clean up CA config file
+    Remove-Item -Path $caConfigFile -Force -ErrorAction SilentlyContinue
+    
+    Write-Host "✓ CA certificate generated successfully with proper CA extensions" -ForegroundColor Green
     Write-Host "  CA Certificate: $caCrtFile" -ForegroundColor Gray
     Write-Host "  CA Private Key: $caKeyFile" -ForegroundColor Gray
+    Write-Host "  CA PFX (Development): $caPfxFile" -ForegroundColor Gray
+    Write-Host "  Extensions: CA:TRUE, keyCertSign, cRLSign (can issue certificates)" -ForegroundColor Gray
 }
 
 # Function to generate service certificate
@@ -229,6 +322,97 @@ $(($sanList | ForEach-Object -Begin { $i = 1 } -Process { if ($_ -match '^\d+\.\
         Write-Host "  Keystore: $serviceKeystoreFile" -ForegroundColor Gray
         Write-Host "  Truststore: $serviceTruststoreFile" -ForegroundColor Gray
     }
+    Write-Host "  Extensions: keyEncipherment, dataEncipherment, serverAuth, clientAuth" -ForegroundColor Gray
+    
+    # Clean up temporary files
+    Remove-Item -Path $configFile -Force -ErrorAction SilentlyContinue
+}
+
+# Function to generate environment certificate (for development purposes)
+function New-EnvironmentCertificate {
+    param(
+        [string]$ServiceName,
+        [string[]]$AltNames = @()
+    )
+    
+    Write-Host "Step: Generating $ServiceName environment certificate (development)..." -ForegroundColor Cyan
+    
+    $envDir = Join-Path $CertsDir "env"
+    $caDir = Join-Path $CertsDir "ca"
+    $caKeyFile = Join-Path $caDir "ca.key"
+    $caCrtFile = Join-Path $caDir "ca.crt"
+    
+    # Environment certificate files
+    $envKeyFile = Join-Path $envDir "$ServiceName.key"
+    $envCsrFile = Join-Path $envDir "$ServiceName.csr" 
+    $envCrtFile = Join-Path $envDir "$ServiceName.crt"
+    $envPfxFile = Join-Path $envDir "$ServiceName.pfx"
+    
+    if ($SkipIfExists -and (Test-Path $envCrtFile)) {
+        Write-Host "✓ $ServiceName environment certificate already exists, skipping..." -ForegroundColor Green
+        return
+    }
+    
+    if ($BackupExisting) {
+        Backup-ExistingCerts $envDir
+    }
+    
+    # Create environment directory
+    New-Item -ItemType Directory -Path $envDir -Force | Out-Null
+    
+    # Generate environment private key
+    Write-Host "  Generating $ServiceName private key..." -ForegroundColor Gray
+    & openssl genrsa -out $envKeyFile 2048
+    if ($LASTEXITCODE -ne 0) { throw "Failed to generate $ServiceName private key" }
+    
+    # Create certificate configuration with SAN
+    $configFile = Join-Path $envDir "$ServiceName-cert.cnf"
+    $sanList = @($ServiceName, "localhost", "127.0.0.1") + $AltNames
+    $sanString = ($sanList | ForEach-Object { if ($_ -match '^\d+\.\d+\.\d+\.\d+$') { "IP:$_" } else { "DNS:$_" } }) -join ","
+    
+    $configContent = @"
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = $Country
+O = $Organization
+OU = $OrganizationalUnit
+CN = $ServiceName
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[alt_names]
+$(($sanList | ForEach-Object -Begin { $i = 1 } -Process { if ($_ -match '^\d+\.\d+\.\d+\.\d+$') { "IP.$i = $_" } else { "DNS.$i = $_" }; $i++ }) -join "`n")
+"@
+    
+    Set-Content -Path $configFile -Value $configContent -Encoding UTF8
+    
+    # Generate certificate signing request
+    Write-Host "  Generating $ServiceName CSR..." -ForegroundColor Gray
+    & openssl req -new -key $envKeyFile -out $envCsrFile -config $configFile
+    if ($LASTEXITCODE -ne 0) { throw "Failed to generate $ServiceName CSR" }
+    
+    # Sign certificate with CA
+    Write-Host "  Signing $ServiceName certificate..." -ForegroundColor Gray
+    & openssl x509 -req -in $envCsrFile -CA $caCrtFile -CAkey $caKeyFile -passin "pass:$CaKeyPassword" -CAcreateserial -out $envCrtFile -days $CertValidityDays -extensions v3_req -extfile $configFile
+    if ($LASTEXITCODE -ne 0) { throw "Failed to sign $ServiceName certificate" }
+    
+    # Generate PFX file for development
+    Write-Host "  Generating $ServiceName PFX file for development..." -ForegroundColor Gray
+    & openssl pkcs12 -export -out $envPfxFile -inkey $envKeyFile -in $envCrtFile -certfile $caCrtFile -passout "pass:$CertPassword"
+    if ($LASTEXITCODE -ne 0) { throw "Failed to generate $ServiceName PFX file" }
+    
+    Write-Host "✓ $ServiceName environment certificate generated successfully" -ForegroundColor Green
+    Write-Host "  Certificate: $envCrtFile" -ForegroundColor Gray
+    Write-Host "  Private Key: $envKeyFile" -ForegroundColor Gray
+    Write-Host "  PFX (Development): $envPfxFile" -ForegroundColor Gray
+    Write-Host "  Extensions: keyEncipherment, dataEncipherment (CANNOT be used for signing)" -ForegroundColor Gray
     
     # Clean up temporary files
     Remove-Item -Path $configFile -Force -ErrorAction SilentlyContinue
@@ -265,6 +449,10 @@ try {
         Write-Warning "Kafka JKS keystores not generated - keytool not available"
     }
     
+    # Generate sysSDSEnvLocal certificate for development (stored in env/ subdirectory)
+    Write-Host ""
+    New-EnvironmentCertificate -ServiceName "sysSDSEnvLocal" -AltNames @("localhost", "127.0.0.1")
+    
     Write-Host ""
     Write-Host "=== Certificate Generation Complete ===" -ForegroundColor Green
     Write-Host ""
@@ -272,15 +460,50 @@ try {
     # Install CA certificate if requested
     if ($InstallCA) {
         $caCertPath = Join-Path $CertsDir "ca\ca.crt"
+        $caPfxPath = Join-Path $CertsDir "ca\ca.pfx"
         $installScript = Join-Path $CertsDir "Install-CACertificate.ps1"
         
+        # Install to trusted root store (public certificate only)
         if (Test-CAInTrustStore $CaName) {
-            Write-Host "✓ CA '$CaName' already installed in Windows trust store, skipping installation" -ForegroundColor Green
+            Write-Host "✓ CA '$CaName' already installed in Windows trust store, skipping trust store installation" -ForegroundColor Green
         } elseif (Test-Path $installScript) {
             Write-Host "Installing CA certificate to Windows trust store..." -ForegroundColor Cyan
             & $installScript -CaCertPath $caCertPath -CaCn $CaName
         } else {
-            Write-Warning "Install-CACertificate.ps1 not found, skipping CA installation"
+            Write-Warning "Install-CACertificate.ps1 not found, skipping CA trust store installation"
+        }
+        
+        # Install to personal store with private key (for development certificate signing)
+        if ($InstallWithPrivateKey -and (Test-Path $caPfxPath)) {
+            Write-Host "Installing CA certificate with private key to Personal store for development..." -ForegroundColor Cyan
+            $caThumbprintFromPersonal = Install-CertificateWithPrivateKey -PfxPath $caPfxPath -CertPassword $CertPassword -CertificateName "CA ($CaName)"
+        } else {
+            Write-Host "  Skipping CA private key installation (use -InstallWithPrivateKey to enable)" -ForegroundColor Gray
+        }
+    }
+    
+    # Install sysSDSEnvLocal certificate if requested
+    if ($InstallEnvLocal) {
+        $envLocalCertPath = Join-Path $CertsDir "env\sysSDSEnvLocal.crt"
+        $envLocalPfxPath = Join-Path $CertsDir "env\sysSDSEnvLocal.pfx"
+        $installScript = Join-Path $CertsDir "Install-CACertificate.ps1"
+        
+        # Install to trusted root store (public certificate only)
+        if (Test-CAInTrustStore "sysSDSEnvLocal") {
+            Write-Host "✓ sysSDSEnvLocal certificate already installed in Windows trust store, skipping trust store installation" -ForegroundColor Green
+        } elseif (Test-Path $installScript) {
+            Write-Host "Installing sysSDSEnvLocal certificate to Windows trust store..." -ForegroundColor Cyan
+            & $installScript -CaCertPath $envLocalCertPath -CaCn "sysSDSEnvLocal"
+        } else {
+            Write-Warning "Install-CACertificate.ps1 not found, skipping sysSDSEnvLocal trust store installation"
+        }
+        
+        # Install to personal store with private key (for development use)
+        if ($InstallWithPrivateKey -and (Test-Path $envLocalPfxPath)) {
+            Write-Host "Installing sysSDSEnvLocal certificate with private key to Personal store for development..." -ForegroundColor Cyan
+            $envLocalThumbprintFromPersonal = Install-CertificateWithPrivateKey -PfxPath $envLocalPfxPath -CertPassword $CertPassword -CertificateName "Environment (sysSDSEnvLocal)"
+        } else {
+            Write-Host "  Skipping sysSDSEnvLocal private key installation (use -InstallWithPrivateKey to enable)" -ForegroundColor Gray
         }
     }
     
@@ -288,11 +511,72 @@ try {
     Write-Host "Certificate Summary:" -ForegroundColor Yellow
     Write-Host "- CA: $CaName (valid for $CaValidityDays days)" -ForegroundColor Gray
     Write-Host "- Service certificates valid for $CertValidityDays days" -ForegroundColor Gray
+    Write-Host "- Environment certificate (sysSDSEnvLocal) generated in env/ subdirectory" -ForegroundColor Gray
     Write-Host "- Certificate password: $CertPassword" -ForegroundColor Gray
     Write-Host "- All certificates stored in: $CertsDir" -ForegroundColor Gray
+    if ($InstallWithPrivateKey) {
+        Write-Host "- Certificates installed with private keys to Personal store for development" -ForegroundColor Gray
+    }
     Write-Host ""
     Write-Host "✓ All certificates generated successfully!" -ForegroundColor Green
     
+    # Display important certificate thumbprint information
+    Write-Host ""
+    Write-Host "╔═══════════════════════════════════════════════════════════════════════════════╗" -ForegroundColor Red
+    Write-Host "║" -ForegroundColor Red -NoNewline
+    Write-Host "                          ⚠️  IMPORTANT INFORMATION  ⚠️                        " -ForegroundColor Yellow -NoNewline
+    Write-Host "║" -ForegroundColor Red
+    Write-Host "║" -ForegroundColor Red -NoNewline
+    Write-Host "                            DO NOT OVERLOOK THIS!                              " -ForegroundColor Yellow -NoNewline
+    Write-Host "║" -ForegroundColor Red
+    Write-Host "╠═══════════════════════════════════════════════════════════════════════════════╣" -ForegroundColor Red
+    Write-Host "║" -ForegroundColor Red -NoNewline
+    Write-Host "                                                                               " -NoNewline
+    Write-Host "║" -ForegroundColor Red
+    
+    # Get certificate thumbprints
+    $caThumbprint = Get-CertThumbprintFromTrustStore $CaName
+    $envLocalThumbprint = Get-CertThumbprintFromTrustStore "sysSDSEnvLocal"
+    
+    if ($caThumbprint -and $envLocalThumbprint) {
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host " Before you run any service, please update your local.json configuration:      " -ForegroundColor White -NoNewline
+        Write-Host "║" -ForegroundColor Red
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host "                                                                               " -NoNewline
+        Write-Host "║" -ForegroundColor Red
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host " 1. Set your certificate with purpose SIGNING to this thumbprint:              " -ForegroundColor White -NoNewline
+        Write-Host "║" -ForegroundColor Red
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host "    $caThumbprint                                   " -ForegroundColor Cyan -NoNewline
+        Write-Host "║" -ForegroundColor Red
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host "                                                                               " -NoNewline
+        Write-Host "║" -ForegroundColor Red
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host " 2. Set the environment purpose certificate to this thumbprint:                " -ForegroundColor White -NoNewline
+        Write-Host "║" -ForegroundColor Red
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host "    $envLocalThumbprint                                   " -ForegroundColor Cyan -NoNewline
+        Write-Host "║" -ForegroundColor Red
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host "                                                                               " -NoNewline
+        Write-Host "║" -ForegroundColor Red
+    } else {
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host " Certificate thumbprints could not be retrieved from Windows trust store.      " -ForegroundColor Yellow -NoNewline
+        Write-Host "║" -ForegroundColor Red
+        Write-Host "║" -ForegroundColor Red -NoNewline
+        Write-Host " Please verify certificates are installed correctly and check manually.        " -ForegroundColor Yellow -NoNewline
+        Write-Host "║" -ForegroundColor Red
+    }
+    
+    Write-Host "║" -ForegroundColor Red -NoNewline
+    Write-Host "                                                                               " -NoNewline
+    Write-Host "║" -ForegroundColor Red
+    Write-Host "╚═══════════════════════════════════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host ""    
 } catch {
     Write-Error "Certificate generation failed: $($_.Exception.Message)"
     exit 1

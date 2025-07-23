@@ -22,6 +22,7 @@ certs/*
 !certs/.gitkeep
 !certs/README.md
 !certs/*.ps1
+!certs/*.sh
 !certs/*/
 certs/*/*
 !certs/*/.gitkeep
