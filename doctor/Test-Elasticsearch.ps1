@@ -8,7 +8,7 @@
     performing searches, and cleaning up. Returns a detailed test report.
     
 .PARAMETER ElasticsearchUrl
-    Elasticsearch endpoint URL (default: https://localhost:9200)
+    Elasticsearch endpoint URL (default: https://127.0.0.1:9200)
     
 .PARAMETER Username
     Elasticsearch username (default: elastic)
@@ -21,12 +21,12 @@
     
 .EXAMPLE
     .\Test-Elasticsearch.ps1
-    .\Test-Elasticsearch.ps1 -ElasticsearchUrl "https://localhost:9200" -Username "elastic" -Password "mypassword"
+    .\Test-Elasticsearch.ps1 -ElasticsearchUrl "https://127.0.0.1:9200" -Username "elastic" -Password "mypassword"
     .\Test-Elasticsearch.ps1 -SkipCleanup
 #>
 
 param(
-    [string]$ElasticsearchUrl = "https://localhost:9200",
+    [string]$ElasticsearchUrl = "https://127.0.0.1:9200",
     [string]$Username = "elastic", 
     [string]$Password = $null,
     [switch]$SkipCleanup

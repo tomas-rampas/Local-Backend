@@ -8,10 +8,10 @@
     dashboards, and testing visualization features. Returns a detailed test report.
     
 .PARAMETER KibanaUrl
-    Kibana endpoint URL (default: http://localhost:5601)
+    Kibana endpoint URL (default: http://127.0.0.1:5601)
     
 .PARAMETER ElasticsearchUrl
-    Elasticsearch endpoint URL (default: https://localhost:9200)
+    Elasticsearch endpoint URL (default: https://127.0.0.1:9200)
     
 .PARAMETER ElasticsearchUsername
     Elasticsearch username (default: elastic)
@@ -24,13 +24,13 @@
     
 .EXAMPLE
     .\Test-Kibana.ps1
-    .\Test-Kibana.ps1 -KibanaUrl "http://localhost:5601"
+    .\Test-Kibana.ps1 -KibanaUrl "http://127.0.0.1:5601"
     .\Test-Kibana.ps1 -SkipCleanup
 #>
 
 param(
-    [string]$KibanaUrl = "http://localhost:5601",
-    [string]$ElasticsearchUrl = "https://localhost:9200",
+    [string]$KibanaUrl = "http://127.0.0.1:5601",
+    [string]$ElasticsearchUrl = "https://127.0.0.1:9200",
     [string]$ElasticsearchUsername = "elastic",
     [string]$ElasticsearchPassword = $null,
     [switch]$SkipCleanup

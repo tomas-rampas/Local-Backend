@@ -135,7 +135,7 @@ services:
         echo "Testing basic HTTPS connectivity:"
         curl -v --connect-timeout 10 --max-time 30 -u "elastic:$$ELASTIC_PASSWORD" -k "https://$$ES_HOST:$$ES_PORT/_cluster/health" || echo "Basic HTTPS test failed"
 
-        echo "Attempting to create user: $NEW_USER_NAME..."
+        echo "Attempting to create user: $$NEW_USER_NAME..."
         echo "Using ES_HOST=$$ES_HOST and ES_PORT=$$ES_PORT"
 
         echo "Attempting user creation with self-signed certificate..."
@@ -205,7 +205,7 @@ services:
       - "${KAFKA_EXTERNAL_PORT:-9094}:9094"
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://artemis-kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://127.0.0.1:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT

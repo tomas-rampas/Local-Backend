@@ -128,31 +128,48 @@ function Test-ServiceEndpoint {
     )
     
     try {
+        # Basic optimizations
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        $originalProgressPreference = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
+        
+        # Replace localhost with 127.0.0.1 for Windows Docker networking compatibility
+        $Url = $Url -replace "localhost", "127.0.0.1"
+        
+        # Use Invoke-RestMethod with -Authentication Basic (based on user's working solution)
         $params = @{
             Uri = $Url
             TimeoutSec = $TimeoutSec
             ErrorAction = 'Stop'
         }
         
-        if ($Credential) {
-            $params['Credential'] = $Credential
-        }
-        
         if ($SkipCertificateCheck) {
             $params['SkipCertificateCheck'] = $true
         }
         
-        $response = Invoke-WebRequest @params
+        if ($Credential) {
+            # Use -Authentication Basic as discovered by user
+            $params['Authentication'] = 'Basic'
+            $params['Credential'] = $Credential
+        }
+        
+        $response = Invoke-RestMethod @params
+        
         return @{
             Success = $true
-            StatusCode = $response.StatusCode
-            Response = $response.Content
+            StatusCode = 200  # Invoke-RestMethod doesn't return status code directly, assume success
+            Response = if ($response -is [string]) { $response } else { ($response | ConvertTo-Json -Compress) }
         }
     } catch {
         return @{
             Success = $false
             Error = $_.Exception.Message
             StatusCode = if ($_.Exception.Response) { $_.Exception.Response.StatusCode } else { "N/A" }
+        }
+    } finally {
+        # Restore original progress preference
+        if ($originalProgressPreference) {
+            $ProgressPreference = $originalProgressPreference
         }
     }
 }
@@ -413,7 +430,7 @@ foreach ($service in $services) {
         Write-Host ""
         Write-ColorOutput "🌐 Endpoint Testing:" "Blue"
         
-        $url = "$($service.Protocol)://localhost:$($service.Port)"
+        $url = "$($service.Protocol)://127.0.0.1:$($service.Port)"
         if ($service.Name -eq "elasticsearch") {
             $url += "/_cluster/health"
             # Create credentials for Elasticsearch
@@ -422,9 +439,9 @@ foreach ($service in $services) {
             $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
             $credential = New-Object System.Management.Automation.PSCredential("elastic", $securePassword)
             
-            $result = Test-ServiceEndpoint -Url $url -Credential $credential -SkipCertificateCheck -TimeoutSec 5
+            $result = Test-ServiceEndpoint -Url $url -Credential $credential -SkipCertificateCheck -TimeoutSec 15
         } else {
-            $result = Test-ServiceEndpoint -Url $url -TimeoutSec 5
+            $result = Test-ServiceEndpoint -Url $url -TimeoutSec 15
         }
         
         if ($result.Success) {

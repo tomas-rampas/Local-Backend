@@ -8,7 +8,7 @@
     performing queries, and testing various MongoDB operations. Returns a detailed test report.
     
 .PARAMETER MongoHost
-    MongoDB host (default: localhost)
+    MongoDB host (default: 127.0.0.1)
     
 .PARAMETER MongoPort
     MongoDB port (default: 27017)
@@ -21,12 +21,12 @@
     
 .EXAMPLE
     .\Test-MongoDB.ps1
-    .\Test-MongoDB.ps1 -MongoHost "localhost" -MongoPort 27017
+    .\Test-MongoDB.ps1 -MongoHost "127.0.0.1" -MongoPort 27017
     .\Test-MongoDB.ps1 -SkipCleanup
 #>
 
 param(
-    [string]$MongoHost = "localhost",
+    [string]$MongoHost = "127.0.0.1",
     [int]$MongoPort = 27017,
     [string]$Database = $null,
     [switch]$SkipCleanup

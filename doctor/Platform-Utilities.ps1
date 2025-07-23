@@ -248,9 +248,14 @@ function Get-EnvironmentVariable {
         [string]$DefaultValue = ""
     )
     
-    $value = $env:$Name
+    $value = [Environment]::GetEnvironmentVariable($Name)
     if (-not $value) {
-        $value = [Environment]::GetEnvironmentVariable($Name)
+        # Try alternative method for getting environment variable
+        try {
+            $value = Get-ChildItem env: | Where-Object { $_.Name -eq $Name } | Select-Object -ExpandProperty Value -First 1
+        } catch {
+            # Ignore errors
+        }
     }
     
     if (-not $value) {

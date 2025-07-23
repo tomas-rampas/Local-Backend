@@ -9,7 +9,7 @@
     Returns a detailed test report.
     
 .PARAMETER ServerHost
-    SQL Server host (default: localhost)
+    SQL Server host (default: 127.0.0.1)
     
 .PARAMETER ServerPort
     SQL Server port (default: 1433)
@@ -18,7 +18,7 @@
     SQL Server username (default: sa)
     
 .PARAMETER Password
-    SQL Server password (default: from SQLSERVER_SA_PASSWORD or '@rt3m1sD3v')
+    SQL Server password (required: must be provided via parameter or SQLSERVER_SA_PASSWORD environment variable)
     
 .PARAMETER TestDatabase
     Test database name (default: artemis_test_TIMESTAMP)
@@ -28,12 +28,12 @@
     
 .EXAMPLE
     .\Test-SqlServer.ps1
-    .\Test-SqlServer.ps1 -ServerHost "localhost" -Username "sa" -Password "MyPassword123!"
+    .\Test-SqlServer.ps1 -ServerHost "127.0.0.1" -Username "sa" -Password "MyPassword123!"
     .\Test-SqlServer.ps1 -SkipCleanup
 #>
 
 param(
-    [string]$ServerHost = "localhost",
+    [string]$ServerHost = "127.0.0.1",
     [int]$ServerPort = 1433,
     [string]$Username = "sa",
     [string]$Password = $null,
@@ -41,11 +41,31 @@ param(
     [switch]$SkipCleanup
 )
 
-# Set default password if not provided
+# Load environment variables from .env file if it exists
+function Load-EnvironmentVariables {
+    $envFile = Join-Path $PSScriptRoot "../.env"
+    if (Test-Path $envFile) {
+        Get-Content $envFile | ForEach-Object {
+            if ($_ -match '^([^#][^=]*)=(.*)$') {
+                $name = $matches[1].Trim()
+                $value = $matches[2].Trim()
+                # Remove quotes if present
+                $value = $value -replace '^["'']|["'']$', ''
+                [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+            }
+        }
+    }
+}
+
+# Load environment variables from .env file
+Load-EnvironmentVariables
+
+# Set password from environment or fail if not available
 if (-not $Password) {
     $Password = $env:SQLSERVER_SA_PASSWORD
     if (-not $Password) {
-        $Password = "@rt3m1sD3v"  # Default fallback
+        Write-Error "SQLSERVER_SA_PASSWORD is not defined in environment variables or .env file. Please set this variable before running the test." -ErrorAction Stop
+        exit 1
     }
 }
 
@@ -126,33 +146,14 @@ function Invoke-SqlServerCommand {
             Write-Verbose "Executing simple query: $($dockerCommand -join ' ')"
             $result = & $dockerCommand[0] $dockerCommand[1..($dockerCommand.Length-1)] 2>&1
         } else {
-            # Complex query - write to temp file and use bash
-            # Use PowerShell's temp directory which works cross-platform
-            $tempDir = [System.IO.Path]::GetTempPath()
-            $tempFileName = "sqlserver_query_$(Get-Random).sql"
-            $tempFile = Join-Path $tempDir $tempFileName
+            # Complex query - use base64 encoding to avoid temp file issues
+            $queryBytes = [System.Text.Encoding]::UTF8.GetBytes($Query)
+            $base64Query = [Convert]::ToBase64String($queryBytes)
             
-            # Write query to temp file
-            $Query | Out-File -FilePath $tempFile -Encoding ASCII -NoNewline
+            $bashCommand = "echo '$base64Query' | base64 -d | docker-compose exec -T sqlserver /opt/mssql-tools/bin/sqlcmd -S $ServerHost,$ServerPort -U $Username -P '$Password' -d $Database -t $TimeoutSeconds"
             
-            # Use the correct path for bash command (convert Windows path if needed)
-            $bashTempFile = if ($IsWindows -or $env:OS -eq "Windows_NT") {
-                # On Windows/WSL, convert to Unix-style path
-                $tempFile -replace '\\', '/' -replace '^([A-Za-z]):', '/mnt/$1'
-            } else {
-                $tempFile
-            }
-            
-            $bashCommand = "cat '$bashTempFile' | docker-compose exec -T sqlserver /opt/mssql-tools/bin/sqlcmd -S $ServerHost,$ServerPort -U $Username -P '$Password' -d $Database -t $TimeoutSeconds"
-            
-            Write-Verbose "Executing complex query via temp file: $tempFile (bash path: $bashTempFile)"
-            try {
-                $result = bash -c $bashCommand 2>&1
-            } finally {
-                if (Test-Path $tempFile) {
-                    Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-                }
-            }
+            Write-Verbose "Executing complex query via base64 encoding"
+            $result = bash -c $bashCommand 2>&1
         }
         
         if ($LASTEXITCODE -eq 0) {
@@ -241,7 +242,18 @@ END
 
 $createDbResult = Invoke-SqlServerCommand -Query $createDbQuery
 if ($createDbResult.Success) {
-    Write-TestResult "Create Test Database" $true "Database '$TestDatabase' created successfully" -ResponseData $createDbResult.Output
+    # Wait a moment for database to be fully available
+    Start-Sleep -Seconds 2
+    
+    # Verify database is accessible by trying to connect to it
+    $verifyQuery = "SELECT DB_NAME() AS CurrentDatabase"
+    $verifyResult = Invoke-SqlServerCommand -Query $verifyQuery -Database $TestDatabase
+    
+    if ($verifyResult.Success) {
+        Write-TestResult "Create Test Database" $true "Database '$TestDatabase' created and verified successfully" -ResponseData $createDbResult.Output
+    } else {
+        Write-TestResult "Create Test Database" $false -ErrorMessage "Database created but not accessible: $($verifyResult.Error)"
+    }
 } else {
     Write-TestResult "Create Test Database" $false -ErrorMessage $createDbResult.Error
 }

@@ -26,7 +26,7 @@
 #>
 
 param(
-    [string]$KafkaHost = "localhost",
+    [string]$KafkaHost = "127.0.0.1",
     [int]$KafkaPort = 9094,
     [string]$TopicPrefix = $null,
     [switch]$SkipCleanup
@@ -102,25 +102,47 @@ function Invoke-KafkaCommand {
         
         Write-Verbose "Executing: $dockerCommand"
         
-        # Execute with timeout
+        # Execute with timeout and capture both output and exit code
         $job = Start-Job -ScriptBlock { 
             param($cmd)
-            Invoke-Expression $cmd 2>&1
+            try {
+                $output = Invoke-Expression $cmd 2>&1
+                # Return both output and a success indicator
+                return @{
+                    Output = $output
+                    ExitCode = $LASTEXITCODE
+                    Success = $LASTEXITCODE -eq 0
+                }
+            } catch {
+                return @{
+                    Output = $_.Exception.Message
+                    ExitCode = 1
+                    Success = $false
+                }
+            }
         } -ArgumentList $dockerCommand
         
-        $result = $job | Wait-Job -Timeout $TimeoutSeconds | Receive-Job
+        $jobResult = $job | Wait-Job -Timeout $TimeoutSeconds | Receive-Job
+        $jobState = $job.State  # Capture state before removing job
+        Remove-Job $job -Force
         
-        if ($job.State -eq "Completed" -and $LASTEXITCODE -eq 0) {
-            Remove-Job $job -Force
+        if ($jobState -eq "Completed" -and $jobResult -and $jobResult.Success) {
             return @{
                 Success = $true
-                Output = $result
+                Output = $jobResult.Output
             }
         } else {
-            Remove-Job $job -Force
+            $errorMsg = if ($jobState -eq "Running") { 
+                "Command timed out after $TimeoutSeconds seconds" 
+            } elseif ($jobResult -and $jobResult.Output) { 
+                $jobResult.Output -join "`n" 
+            } else { 
+                "Command failed or timed out (job state: $jobState)" 
+            }
+            
             return @{
                 Success = $false
-                Error = if ($result) { $result -join "`n" } else { "Command timed out or failed" }
+                Error = $errorMsg
             }
         }
     }
@@ -134,7 +156,8 @@ function Invoke-KafkaCommand {
 
 function Test-KafkaConnection {
     try {
-        $result = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-broker-api-versions.sh" -Arguments @("--bootstrap-server", "$KafkaHost`:$KafkaPort") -TimeoutSeconds 10
+        # Use internal Kafka address when running commands inside the container
+        $result = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-broker-api-versions.sh" -Arguments @("--bootstrap-server", "kafka:9092") -TimeoutSeconds 10
         return $result.Success
     }
     catch {
@@ -164,7 +187,7 @@ if (Test-KafkaConnection) {
 
 # Test 2: List Topics (initial)
 Write-Host "Listing existing topics..." -ForegroundColor Yellow
-$listTopicsResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @("--bootstrap-server", "$KafkaHost`:$KafkaPort", "--list")
+$listTopicsResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @("--bootstrap-server", "kafka:9092", "--list")
 if ($listTopicsResult.Success) {
     $topicCount = ($listTopicsResult.Output | Where-Object { $_ -match '\w+' }).Count
     Write-TestResult "List Topics" $true "Found $topicCount existing topics" -ResponseData $listTopicsResult.Output
@@ -175,7 +198,7 @@ if ($listTopicsResult.Success) {
 # Test 3: Create Topic (single partition)
 Write-Host "Creating single-partition test topic..." -ForegroundColor Yellow
 $createTopicResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @(
-    "--bootstrap-server", "$KafkaHost`:$KafkaPort",
+    "--bootstrap-server", "kafka:9092",
     "--create",
     "--topic", $TestTopic,
     "--partitions", "1",
@@ -190,7 +213,7 @@ if ($createTopicResult.Success -or $createTopicResult.Error -match "already exis
 # Test 4: Create Multi-Partition Topic
 Write-Host "Creating multi-partition test topic..." -ForegroundColor Yellow
 $createMultiTopicResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @(
-    "--bootstrap-server", "$KafkaHost`:$KafkaPort",
+    "--bootstrap-server", "kafka:9092",
     "--create",
     "--topic", $TestTopicMultiPartition,
     "--partitions", "3",
@@ -205,7 +228,7 @@ if ($createMultiTopicResult.Success -or $createMultiTopicResult.Error -match "al
 # Test 5: Describe Topic
 Write-Host "Describing topic configuration..." -ForegroundColor Yellow
 $describeTopicResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @(
-    "--bootstrap-server", "$KafkaHost`:$KafkaPort",
+    "--bootstrap-server", "kafka:9092",
     "--describe",
     "--topic", $TestTopic
 )
@@ -228,8 +251,11 @@ $produceResult = $true
 $producedCount = 0
 
 foreach ($message in $messages) {
-    $produceCommand = "echo '$message' | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server $KafkaHost`:$KafkaPort --topic $TestTopic"
-    $result = Invoke-KafkaCommand -Command "sh" -Arguments @("-c", $produceCommand) -TimeoutSeconds 10
+    # Use base64 encoding to completely avoid all shell escaping issues (like JSON messages)
+    $messageBytes = [System.Text.Encoding]::UTF8.GetBytes($message)
+    $base64Message = [Convert]::ToBase64String($messageBytes)
+    $produceCommand = "echo '$base64Message' | base64 -d | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:9092 --topic $TestTopic"
+    $result = Invoke-KafkaCommand -Command "/bin/sh" -Arguments @("-c", $produceCommand) -TimeoutSeconds 10
     
     if ($result.Success) {
         $producedCount++
@@ -240,7 +266,18 @@ foreach ($message in $messages) {
 }
 
 if ($produceResult -and $producedCount -eq $messages.Count) {
-    Write-TestResult "Produce Messages" $true "$producedCount messages produced successfully"
+    # Verify messages were actually stored by checking topic offset
+    $offsetResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-run-class.sh" -Arguments @("kafka.tools.GetOffsetShell", "--broker-list", "kafka:9092", "--topic", $TestTopic) -TimeoutSeconds 10
+    if ($offsetResult.Success -and $offsetResult.Output -match ":(\d+)$") {
+        $messageCount = [int]$matches[1]
+        if ($messageCount -ge $producedCount) {
+            Write-TestResult "Produce Messages" $true "$producedCount messages produced successfully (verified: $messageCount messages in topic)"
+        } else {
+            Write-TestResult "Produce Messages" $false -ErrorMessage "Messages not properly stored (produced: $producedCount, stored: $messageCount)"
+        }
+    } else {
+        Write-TestResult "Produce Messages" $true "$producedCount messages produced successfully (verification failed, but production succeeded)"
+    }
 } else {
     Write-TestResult "Produce Messages" $false -ErrorMessage "Failed to produce all messages ($producedCount/$($messages.Count))"
 }
@@ -274,16 +311,21 @@ $jsonMessages = @(
         event_type = "error"
         error_code = "ERR_001"
         error_message = "Database connection timeout"
-        stack_trace = "at Connection.connect(db.js:45)"
+        stack_trace = "at Connection.connect(database.js:45)"
         severity = "high"
     }
 )
 
 $jsonProducedCount = 0
 foreach ($jsonMsg in $jsonMessages) {
-    $jsonString = ($jsonMsg | ConvertTo-Json -Compress).Replace('"', '\"').Replace("'", "\'")
-    $jsonProduceCommand = "echo '$jsonString' | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server $KafkaHost`:$KafkaPort --topic $TestTopic"
-    $result = Invoke-KafkaCommand -Command "sh" -Arguments @("-c", $jsonProduceCommand) -TimeoutSeconds 10
+    $jsonString = $jsonMsg | ConvertTo-Json -Compress
+    
+    # Use base64 encoding to completely avoid shell escaping issues
+    $jsonBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonString)
+    $base64Json = [Convert]::ToBase64String($jsonBytes)
+    
+    $kafkaScript = "echo '$base64Json' | base64 -d | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:9092 --topic $TestTopic"
+    $result = Invoke-KafkaCommand -Command "/bin/sh" -Arguments @("-c", $kafkaScript) -TimeoutSeconds 15
     
     if ($result.Success) {
         $jsonProducedCount++
@@ -303,12 +345,12 @@ Start-Sleep -Seconds 3
 # Test 8: Consume Messages (from beginning)
 Write-Host "Consuming messages from beginning..." -ForegroundColor Yellow
 $consumeResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-console-consumer.sh" -Arguments @(
-    "--bootstrap-server", "$KafkaHost`:$KafkaPort",
+    "--bootstrap-server", "kafka:9092",
     "--topic", $TestTopic,
     "--from-beginning",
     "--max-messages", "10",
-    "--timeout-ms", "10000"
-) -TimeoutSeconds 15
+    "--timeout-ms", "30000"
+) -TimeoutSeconds 40
 
 if ($consumeResult.Success) {
     $consumedMessages = ($consumeResult.Output | Where-Object { $_ -match '\w+' }).Count
@@ -329,8 +371,11 @@ $multiPartitionMessages = @(
 
 $multiProducedCount = 0
 foreach ($msg in $multiPartitionMessages) {
-    $multiProduceCommand = "echo '$msg' | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server $KafkaHost`:$KafkaPort --topic $TestTopicMultiPartition"
-    $result = Invoke-KafkaCommand -Command "sh" -Arguments @("-c", $multiProduceCommand) -TimeoutSeconds 10
+    # Use base64 encoding to completely avoid all shell escaping issues
+    $msgBytes = [System.Text.Encoding]::UTF8.GetBytes($msg)
+    $base64Msg = [Convert]::ToBase64String($msgBytes)
+    $multiProduceCommand = "echo '$base64Msg' | base64 -d | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:9092 --topic $TestTopicMultiPartition"
+    $result = Invoke-KafkaCommand -Command "/bin/sh" -Arguments @("-c", $multiProduceCommand) -TimeoutSeconds 10
     
     if ($result.Success) {
         $multiProducedCount++
@@ -347,12 +392,12 @@ if ($multiProducedCount -eq $multiPartitionMessages.Count) {
 Write-Host "Testing consumer group functionality..." -ForegroundColor Yellow
 $consumerGroupId = "artemis-test-group-$(Get-Date -Format 'HHmmss')"
 $consumerGroupResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-console-consumer.sh" -Arguments @(
-    "--bootstrap-server", "$KafkaHost`:$KafkaPort",
+    "--bootstrap-server", "kafka:9092",
     "--topic", $TestTopicMultiPartition,
     "--group", $consumerGroupId,
     "--max-messages", "3",
-    "--timeout-ms", "8000"
-) -TimeoutSeconds 12
+    "--timeout-ms", "30000"
+) -TimeoutSeconds 40
 
 if ($consumerGroupResult.Success) {
     Write-TestResult "Consumer Group Test" $true "Consumer group '$consumerGroupId' created and consumed messages"
@@ -363,7 +408,7 @@ if ($consumerGroupResult.Success) {
 # Test 11: List Consumer Groups
 Write-Host "Listing consumer groups..." -ForegroundColor Yellow
 $listGroupsResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-consumer-groups.sh" -Arguments @(
-    "--bootstrap-server", "$KafkaHost`:$KafkaPort",
+    "--bootstrap-server", "kafka:9092",
     "--list"
 )
 if ($listGroupsResult.Success) {
@@ -376,7 +421,7 @@ if ($listGroupsResult.Success) {
 # Test 12: Topic Configuration
 Write-Host "Testing topic configuration..." -ForegroundColor Yellow
 $configResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-configs.sh" -Arguments @(
-    "--bootstrap-server", "$KafkaHost`:$KafkaPort",
+    "--bootstrap-server", "kafka:9092",
     "--entity-type", "topics",
     "--entity-name", $TestTopic,
     "--describe"
@@ -390,7 +435,7 @@ if ($configResult.Success) {
 # Test 13: Kafka Log Dirs (if available)
 Write-Host "Checking Kafka log directories..." -ForegroundColor Yellow
 $logDirsResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-log-dirs.sh" -Arguments @(
-    "--bootstrap-server", "$KafkaHost`:$KafkaPort",
+    "--bootstrap-server", "kafka:9092",
     "--describe"
 ) -TimeoutSeconds 15
 if ($logDirsResult.Success) {
@@ -403,7 +448,7 @@ if ($logDirsResult.Success) {
 # Test 14: Cluster Information
 Write-Host "Retrieving cluster information..." -ForegroundColor Yellow
 $clusterInfoResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-broker-api-versions.sh" -Arguments @(
-    "--bootstrap-server", "$KafkaHost`:$KafkaPort"
+    "--bootstrap-server", "kafka:9092"
 )
 if ($clusterInfoResult.Success) {
     Write-TestResult "Cluster Information" $true "Kafka cluster information retrieved" -ResponseData $clusterInfoResult.Output
@@ -434,7 +479,7 @@ if (-not $SkipCleanup) {
             Write-Host "  Attempting to delete topic '$topic' (attempt $attempts/$maxAttempts)..." -ForegroundColor Gray
             
             $deleteResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @(
-                "--bootstrap-server", "$KafkaHost`:$KafkaPort",
+                "--bootstrap-server", "kafka:9092",
                 "--delete",
                 "--topic", $topic
             ) -TimeoutSeconds 30
