@@ -288,6 +288,8 @@ services:
     stop_grace_period: 30s
 
 # Named volumes for better data management
+# only the folders containing real text logs are bind-mounted
+# to the host, other volumes are managed by Docker
 volumes:
   # Shared volume for inter-service communication
   shared-volume:
@@ -348,10 +350,6 @@ volumes:
 
   sqlserver-logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${SQLSERVER_LOGS_PATH:-./sqlserver/logs}
 
 # Network configuration
 networks:

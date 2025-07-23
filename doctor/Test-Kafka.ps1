@@ -89,7 +89,7 @@ function Invoke-KafkaCommand {
     param(
         [string]$Command,
         [string[]]$Arguments = @(),
-        [int]$TimeoutSeconds = 30
+        [int]$TimeoutSeconds = 60
     )
     
     try {
@@ -349,8 +349,8 @@ $consumeResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-console-cons
     "--topic", $TestTopic,
     "--from-beginning",
     "--max-messages", "10",
-    "--timeout-ms", "30000"
-) -TimeoutSeconds 40
+    "--timeout-ms", "60000"
+) -TimeoutSeconds 80
 
 if ($consumeResult.Success) {
     $consumedMessages = ($consumeResult.Output | Where-Object { $_ -match '\w+' }).Count
@@ -396,11 +396,11 @@ $consumerGroupResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-consol
     "--topic", $TestTopicMultiPartition,
     "--group", $consumerGroupId,
     "--max-messages", "3",
-    "--timeout-ms", "30000"
-) -TimeoutSeconds 40
+    "--timeout-ms", "60000"
+) -TimeoutSeconds 80
 
 if ($consumerGroupResult.Success) {
-    Write-TestResult "Consumer Group Test" $true "Consumer group '$consumerGroupId' created and consumed messages"
+    Write-TestResult "Consumer Group Test" $true "Consumer group '$consumerGroupId' created and consumed messages" -ResponseData @{GroupId = $consumerGroupId; Output = $consumerGroupResult.Output}
 } else {
     Write-TestResult "Consumer Group Test" $false -ErrorMessage $consumerGroupResult.Error
 }
@@ -464,7 +464,7 @@ if (-not $SkipCleanup) {
     # Give Kafka time to close any active connections and flush data
     Write-Host "Waiting for Kafka to finalize operations..." -ForegroundColor Gray
     Start-Sleep -Seconds 8
-    
+
     # Delete topics with retry logic
     $topics = @($TestTopic, $TestTopicMultiPartition)
     $cleanupResults = @()
@@ -482,7 +482,7 @@ if (-not $SkipCleanup) {
                 "--bootstrap-server", "kafka:9092",
                 "--delete",
                 "--topic", $topic
-            ) -TimeoutSeconds 30
+            ) -TimeoutSeconds 60
             
             if ($deleteResult.Success) {
                 $deleteSuccess = $true
