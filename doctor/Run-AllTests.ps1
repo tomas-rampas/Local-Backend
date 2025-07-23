@@ -830,6 +830,9 @@ if ($slowestService) {
     Write-Host "$($slowestService.Key) ($(Format-Duration $slowestService.Value))" -ForegroundColor Yellow
 }
 
+# Clear console to hide individual service test details but keep summary information
+Clear-Host
+
 # Display detailed individual test performance breakdown
 Write-DetailedTestBreakdown -ServicesToTest $ServicesToTest -ServiceResults $TestResults.ServiceTests
 
