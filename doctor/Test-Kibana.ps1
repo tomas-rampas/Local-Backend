@@ -60,8 +60,13 @@ function Write-TestResult {
         [bool]$Success,
         [string]$Details = "",
         [string]$ErrorMessage = "",
-        [object]$ResponseData = $null
+        [object]$ResponseData = $null,
+        [datetime]$TestStartTime = (Get-Date),
+        [string]$TestCategory = "General"
     )
+    
+    $endTime = Get-Date
+    $duration = $endTime - $TestStartTime
     
     $result = @{
         TestName = $TestName
@@ -69,17 +74,29 @@ function Write-TestResult {
         Details = $Details
         ErrorMessage = $ErrorMessage
         ResponseData = $ResponseData
-        Timestamp = Get-Date
+        StartTime = $TestStartTime
+        EndTime = $endTime
+        Duration = $duration
+        DurationMs = [math]::Round($duration.TotalMilliseconds, 0)
+        DurationSeconds = [math]::Round($duration.TotalSeconds, 2)
+        Category = $TestCategory
+        Timestamp = $endTime  # For backward compatibility
     }
     
     $TestResults.Tests += $result
     
-    # Console output
+    # Console output with timing
     $status = if ($Success) { "✓" } else { "✗" }
     $color = if ($Success) { "Green" } else { "Red" }
+    $durationStr = if ($duration.TotalSeconds -lt 1) {
+        "$($result.DurationMs)ms"
+    } else {
+        "$($result.DurationSeconds)s"
+    }
     
     Write-Host "[$status] " -ForegroundColor $color -NoNewline
     Write-Host $TestName -NoNewline
+    Write-Host " ($durationStr)" -ForegroundColor Cyan -NoNewline
     if ($Details) {
         Write-Host " - $Details" -ForegroundColor Gray
     } else {
@@ -213,13 +230,14 @@ Write-Host ""
 
 # Test 1: Kibana Status Check
 Write-Host "Checking Kibana status..." -ForegroundColor Yellow
+$testStart = Get-Date
 $statusResponse = Invoke-KibanaRequest -Endpoint "/api/status"
 if ($statusResponse.Success) {
     $status = $statusResponse.Data
     $overallStatus = if ($status.status) { $status.status.overall.level } else { "unknown" }
-    Write-TestResult "Kibana Status Check" $true "Overall status: $overallStatus" -ResponseData $status
+    Write-TestResult "Kibana Status Check" $true "Overall status: $overallStatus" -ResponseData $status -TestStartTime $testStart -TestCategory "Connection"
 } else {
-    Write-TestResult "Kibana Status Check" $false -ErrorMessage $statusResponse.Error
+    Write-TestResult "Kibana Status Check" $false -ErrorMessage $statusResponse.Error -TestStartTime $testStart -TestCategory "Connection"
 }
 
 # Test 2: Create test data in Elasticsearch first
@@ -269,9 +287,9 @@ foreach ($i in 0..($testDocuments.Count - 1)) {
 }
 
 if ($insertedDocs -eq $testDocuments.Count) {
-    Write-TestResult "Create Test Data" $true "$insertedDocs test documents created in Elasticsearch"
+    Write-TestResult "Create Test Data" $true "$insertedDocs test documents created in Elasticsearch" -TestStartTime $testStart -TestCategory "Data Operations"
 } else {
-    Write-TestResult "Create Test Data" $false -ErrorMessage "Only $insertedDocs out of $($testDocuments.Count) documents created"
+    Write-TestResult "Create Test Data" $false -ErrorMessage "Only $insertedDocs out of $($testDocuments.Count) documents created" -TestStartTime $testStart -TestCategory "Data Operations"
 }
 
 # Refresh the index
@@ -292,13 +310,14 @@ $indexPattern = @{
 $indexPatternResponse = Invoke-KibanaRequest -Method "POST" -Endpoint "/api/saved_objects/index-pattern" -Body $indexPattern
 if ($indexPatternResponse.Success) {
     $patternId = $indexPatternResponse.Data.id
-    Write-TestResult "Create Index Pattern" $true "Index pattern created with ID: $patternId" -ResponseData $indexPatternResponse.Data
+    Write-TestResult "Create Index Pattern" $true "Index pattern created with ID: $patternId" -ResponseData $indexPatternResponse.Data -TestStartTime $testStart -TestCategory "Kibana Operations"
 } else {
-    Write-TestResult "Create Index Pattern" $false -ErrorMessage $indexPatternResponse.Error
+    Write-TestResult "Create Index Pattern" $false -ErrorMessage $indexPatternResponse.Error -TestStartTime $testStart -TestCategory "Kibana Operations"
 }
 
 # Test 4: Search API Test
 Write-Host "Testing Kibana search API..." -ForegroundColor Yellow
+$testStart = Get-Date
 $searchQuery = @{
     params = @{
         index = $TestIndexName
@@ -315,24 +334,26 @@ $searchQuery = @{
 $searchResponse = Invoke-KibanaRequest -Endpoint "/api/console/proxy?path=/$TestIndexName/_search&method=GET"
 if ($searchResponse.Success -or $searchResponse.StatusCode -eq 404) {
     # 404 might be expected if the proxy endpoint structure is different
-    Write-TestResult "Kibana Search API" $true "Search API endpoint accessible"
+    Write-TestResult "Kibana Search API" $true "Search API endpoint accessible" -TestStartTime $testStart -TestCategory "Search Operations"
 } else {
-    Write-TestResult "Kibana Search API" $false -ErrorMessage $searchResponse.Error
+    Write-TestResult "Kibana Search API" $false -ErrorMessage $searchResponse.Error -TestStartTime $testStart -TestCategory "Search Operations"
 }
 
 # Test 5: Saved Objects API
 Write-Host "Testing saved objects API..." -ForegroundColor Yellow
+$testStart = Get-Date
 $savedObjectsResponse = Invoke-KibanaRequest -Endpoint "/api/saved_objects/_find?type=index-pattern"
 if ($savedObjectsResponse.Success) {
     $objects = $savedObjectsResponse.Data
     $objectCount = if ($objects.saved_objects) { $objects.saved_objects.Count } else { 0 }
-    Write-TestResult "Saved Objects API" $true "Found $objectCount saved objects" -ResponseData $objects
+    Write-TestResult "Saved Objects API" $true "Found $objectCount saved objects" -ResponseData $objects -TestStartTime $testStart -TestCategory "Kibana Operations"
 } else {
-    Write-TestResult "Saved Objects API" $false -ErrorMessage $savedObjectsResponse.Error
+    Write-TestResult "Saved Objects API" $false -ErrorMessage $savedObjectsResponse.Error -TestStartTime $testStart -TestCategory "Kibana Operations"
 }
 
 # Test 6: Create a Simple Visualization
 Write-Host "Creating test visualization..." -ForegroundColor Yellow
+$testStart = Get-Date
 $visualization = @{
     attributes = @{
         title = "Test Log Levels - $TestIndexName"
@@ -384,13 +405,14 @@ $visualization = @{
 $visualizationResponse = Invoke-KibanaRequest -Method "POST" -Endpoint "/api/saved_objects/visualization" -Body $visualization
 if ($visualizationResponse.Success) {
     $vizId = $visualizationResponse.Data.id
-    Write-TestResult "Create Visualization" $true "Visualization created with ID: $vizId" -ResponseData $visualizationResponse.Data
+    Write-TestResult "Create Visualization" $true "Visualization created with ID: $vizId" -ResponseData $visualizationResponse.Data -TestStartTime $testStart -TestCategory "Kibana Operations"
 } else {
-    Write-TestResult "Create Visualization" $false -ErrorMessage $visualizationResponse.Error
+    Write-TestResult "Create Visualization" $false -ErrorMessage $visualizationResponse.Error -TestStartTime $testStart -TestCategory "Kibana Operations"
 }
 
 # Test 7: Create Dashboard
 Write-Host "Creating test dashboard..." -ForegroundColor Yellow
+$testStart = Get-Date
 $dashboard = @{
     attributes = @{
         title = "Artemis Test Dashboard - $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
@@ -426,42 +448,45 @@ $dashboard = @{
 $dashboardResponse = Invoke-KibanaRequest -Method "POST" -Endpoint "/api/saved_objects/dashboard" -Body $dashboard
 if ($dashboardResponse.Success) {
     $dashId = $dashboardResponse.Data.id
-    Write-TestResult "Create Dashboard" $true "Dashboard created with ID: $dashId" -ResponseData $dashboardResponse.Data
+    Write-TestResult "Create Dashboard" $true "Dashboard created with ID: $dashId" -ResponseData $dashboardResponse.Data -TestStartTime $testStart -TestCategory "Kibana Operations"
 } else {
-    Write-TestResult "Create Dashboard" $false -ErrorMessage $dashboardResponse.Error
+    Write-TestResult "Create Dashboard" $false -ErrorMessage $dashboardResponse.Error -TestStartTime $testStart -TestCategory "Kibana Operations"
 }
 
 # Test 8: Kibana Configuration
 Write-Host "Testing Kibana configuration..." -ForegroundColor Yellow
+$testStart = Get-Date
 $configResponse = Invoke-KibanaRequest -Endpoint "/api/kibana/settings"
 if ($configResponse.Success) {
     $settings = $configResponse.Data
     $settingsCount = if ($settings.settings) { $settings.settings.Count } else { 0 }
-    Write-TestResult "Kibana Configuration" $true "Retrieved $settingsCount configuration settings" -ResponseData $settings
+    Write-TestResult "Kibana Configuration" $true "Retrieved $settingsCount configuration settings" -ResponseData $settings -TestStartTime $testStart -TestCategory "Kibana Operations"
 } else {
     # Configuration endpoint might not be available in all versions
-    Write-TestResult "Kibana Configuration" $true "Configuration endpoint test completed (may not be available in all versions)"
+    Write-TestResult "Kibana Configuration" $true "Configuration endpoint test completed (may not be available in all versions)" -TestStartTime $testStart -TestCategory "Kibana Operations"
 }
 
 # Test 9: Space Management
 Write-Host "Testing spaces API..." -ForegroundColor Yellow
+$testStart = Get-Date
 $spacesResponse = Invoke-KibanaRequest -Endpoint "/api/spaces/space"
 if ($spacesResponse.Success) {
     $spaces = $spacesResponse.Data
     $spaceCount = if ($spaces -is [array]) { $spaces.Count } else { 1 }
-    Write-TestResult "Spaces API" $true "Found $spaceCount spaces" -ResponseData $spaces
+    Write-TestResult "Spaces API" $true "Found $spaceCount spaces" -ResponseData $spaces -TestStartTime $testStart -TestCategory "Kibana Operations"
 } else {
     # Spaces might not be available in basic installations
-    Write-TestResult "Spaces API" $true "Spaces API test completed (feature may not be available)"
+    Write-TestResult "Spaces API" $true "Spaces API test completed (feature may not be available)" -TestStartTime $testStart -TestCategory "Kibana Operations"
 }
 
 # Test 10: Health Check via API
 Write-Host "Final health verification..." -ForegroundColor Yellow
+$testStart = Get-Date
 $finalHealthResponse = Invoke-KibanaRequest -Endpoint "/api/status"
 if ($finalHealthResponse.Success) {
-    Write-TestResult "Final Health Check" $true "Kibana is responding normally"
+    Write-TestResult "Final Health Check" $true "Kibana is responding normally" -TestStartTime $testStart -TestCategory "Connection"
 } else {
-    Write-TestResult "Final Health Check" $false -ErrorMessage $finalHealthResponse.Error
+    Write-TestResult "Final Health Check" $false -ErrorMessage $finalHealthResponse.Error -TestStartTime $testStart -TestCategory "Connection"
 }
 
 # Cleanup (unless skipped)
@@ -470,17 +495,19 @@ if (-not $SkipCleanup) {
     Write-Host "Cleaning up test data..." -ForegroundColor Yellow
     
     # Delete Elasticsearch test index
+    $testStart = Get-Date
     $deleteResponse = Invoke-ElasticsearchRequest -Method "DELETE" -Endpoint "/$TestIndexName"
     if ($deleteResponse.Success) {
-        Write-TestResult "Cleanup Test Data" $true "Test index '$TestIndexName' deleted from Elasticsearch"
+        Write-TestResult "Cleanup Test Data" $true "Test index '$TestIndexName' deleted from Elasticsearch" -TestStartTime $testStart -TestCategory "Data Operations"
     } else {
-        Write-TestResult "Cleanup Test Data" $false -ErrorMessage $deleteResponse.Error
+        Write-TestResult "Cleanup Test Data" $false -ErrorMessage $deleteResponse.Error -TestStartTime $testStart -TestCategory "Data Operations"
     }
     
     # Clean up Kibana objects (index patterns, visualizations, dashboards)
     # Note: In a real scenario, you might want to delete the created objects
     # For now, we'll just note that cleanup was attempted
-    Write-TestResult "Cleanup Kibana Objects" $true "Kibana test objects cleanup completed (objects may persist)"
+    $testStart = Get-Date
+    Write-TestResult "Cleanup Kibana Objects" $true "Kibana test objects cleanup completed (objects may persist)" -TestStartTime $testStart -TestCategory "Kibana Operations"
 } else {
     Write-Host ""
     Write-Host "⚠️ Skipping cleanup - Test data preserved" -ForegroundColor Yellow

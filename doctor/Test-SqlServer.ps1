@@ -89,8 +89,13 @@ function Write-TestResult {
         [bool]$Success,
         [string]$Details = "",
         [string]$ErrorMessage = "",
-        [object]$ResponseData = $null
+        [object]$ResponseData = $null,
+        [datetime]$TestStartTime = (Get-Date),
+        [string]$TestCategory = "General"
     )
+    
+    $endTime = Get-Date
+    $duration = $endTime - $TestStartTime
     
     $result = @{
         TestName = $TestName
@@ -98,17 +103,29 @@ function Write-TestResult {
         Details = $Details
         ErrorMessage = $ErrorMessage
         ResponseData = $ResponseData
-        Timestamp = Get-Date
+        StartTime = $TestStartTime
+        EndTime = $endTime
+        Duration = $duration
+        DurationMs = [math]::Round($duration.TotalMilliseconds, 0)
+        DurationSeconds = [math]::Round($duration.TotalSeconds, 2)
+        Category = $TestCategory
+        Timestamp = $endTime  # For backward compatibility
     }
     
     $TestResults.Tests += $result
     
-    # Console output
+    # Console output with timing
     $status = if ($Success) { "✓" } else { "✗" }
     $color = if ($Success) { "Green" } else { "Red" }
+    $durationStr = if ($duration.TotalSeconds -lt 1) {
+        "$($result.DurationMs)ms"
+    } else {
+        "$($result.DurationSeconds)s"
+    }
     
     Write-Host "[$status] " -ForegroundColor $color -NoNewline
     Write-Host $TestName -NoNewline
+    Write-Host " ($durationStr)" -ForegroundColor Cyan -NoNewline
     if ($Details) {
         Write-Host " - $Details" -ForegroundColor Gray
     } else {
@@ -201,33 +218,37 @@ Write-Host ""
 
 # Test 1: Connection Test
 Write-Host "Testing SQL Server connection..." -ForegroundColor Yellow
+$testStart = Get-Date
 if (Test-SqlServerConnection) {
-    Write-TestResult "Connection Test" $true "Successfully connected to SQL Server"
+    Write-TestResult "Connection Test" $true "Successfully connected to SQL Server" -TestStartTime $testStart -TestCategory "Connection"
 } else {
-    Write-TestResult "Connection Test" $false -ErrorMessage "Failed to connect to SQL Server"
+    Write-TestResult "Connection Test" $false -ErrorMessage "Failed to connect to SQL Server" -TestStartTime $testStart -TestCategory "Connection"
 }
 
 # Test 2: Server Information
 Write-Host "Retrieving server information..." -ForegroundColor Yellow
+$testStart = Get-Date
 $serverInfoResult = Invoke-SqlServerCommand -Query "SELECT @@VERSION AS Version, @@SERVERNAME AS ServerName, DB_NAME() AS CurrentDB, SYSTEM_USER AS CurrentUser"
 if ($serverInfoResult.Success) {
-    Write-TestResult "Server Information" $true "Server information retrieved successfully" -ResponseData $serverInfoResult.Output
+    Write-TestResult "Server Information" $true "Server information retrieved successfully" -ResponseData $serverInfoResult.Output -TestStartTime $testStart -TestCategory "Connection"
 } else {
-    Write-TestResult "Server Information" $false -ErrorMessage $serverInfoResult.Error
+    Write-TestResult "Server Information" $false -ErrorMessage $serverInfoResult.Error -TestStartTime $testStart -TestCategory "Connection"
 }
 
 # Test 3: List Databases
 Write-Host "Listing existing databases..." -ForegroundColor Yellow
+$testStart = Get-Date
 $listDbResult = Invoke-SqlServerCommand -Query "SELECT name, database_id, create_date FROM sys.databases ORDER BY name"
 if ($listDbResult.Success) {
     $dbInfo = $listDbResult.Output | Where-Object { $_ -match '\w+' }
-    Write-TestResult "List Databases" $true "Database list retrieved successfully" -ResponseData $listDbResult.Output
+    Write-TestResult "List Databases" $true "Database list retrieved successfully" -ResponseData $listDbResult.Output -TestStartTime $testStart -TestCategory "Database Operations"
 } else {
-    Write-TestResult "List Databases" $false -ErrorMessage $listDbResult.Error
+    Write-TestResult "List Databases" $false -ErrorMessage $listDbResult.Error -TestStartTime $testStart -TestCategory "Database Operations"
 }
 
 # Test 4: Create Test Database
 Write-Host "Creating test database..." -ForegroundColor Yellow
+$testStart = Get-Date
 $createDbQuery = @"
 IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = '$TestDatabase')
 BEGIN
@@ -250,16 +271,17 @@ if ($createDbResult.Success) {
     $verifyResult = Invoke-SqlServerCommand -Query $verifyQuery -Database $TestDatabase
     
     if ($verifyResult.Success) {
-        Write-TestResult "Create Test Database" $true "Database '$TestDatabase' created and verified successfully" -ResponseData $createDbResult.Output
+        Write-TestResult "Create Test Database" $true "Database '$TestDatabase' created and verified successfully" -ResponseData $createDbResult.Output -TestStartTime $testStart -TestCategory "Database Operations"
     } else {
-        Write-TestResult "Create Test Database" $false -ErrorMessage "Database created but not accessible: $($verifyResult.Error)"
+        Write-TestResult "Create Test Database" $false -ErrorMessage "Database created but not accessible: $($verifyResult.Error)" -TestStartTime $testStart -TestCategory "Database Operations"
     }
 } else {
-    Write-TestResult "Create Test Database" $false -ErrorMessage $createDbResult.Error
+    Write-TestResult "Create Test Database" $false -ErrorMessage $createDbResult.Error -TestStartTime $testStart -TestCategory "Database Operations"
 }
 
 # Test 5: Create Test Table with Various Column Types
 Write-Host "Creating test table with multiple column types..." -ForegroundColor Yellow
+$testStart = Get-Date
 $createTableQuery = @"
 USE [$TestDatabase];
 
@@ -288,13 +310,14 @@ END
 
 $createTableResult = Invoke-SqlServerCommand -Query $createTableQuery -Database $TestDatabase
 if ($createTableResult.Success) {
-    Write-TestResult "Create Test Table" $true "Employees table created with 10 columns" -ResponseData $createTableResult.Output
+    Write-TestResult "Create Test Table" $true "Employees table created with 10 columns" -ResponseData $createTableResult.Output -TestStartTime $testStart -TestCategory "Table Operations"
 } else {
-    Write-TestResult "Create Test Table" $false -ErrorMessage $createTableResult.Error
+    Write-TestResult "Create Test Table" $false -ErrorMessage $createTableResult.Error -TestStartTime $testStart -TestCategory "Table Operations"
 }
 
 # Test 6: Insert Test Data
 Write-Host "Inserting test data..." -ForegroundColor Yellow
+$testStart = Get-Date
 $insertDataQuery = @"
 USE [$TestDatabase];
 
@@ -312,19 +335,20 @@ SELECT @@ROWCOUNT AS RowsInserted;
 
 $insertResult = Invoke-SqlServerCommand -Query $insertDataQuery -Database $TestDatabase
 if ($insertResult.Success) {
-    Write-TestResult "Insert Test Data" $true "5 employee records inserted successfully" -ResponseData $insertResult.Output
+    Write-TestResult "Insert Test Data" $true "5 employee records inserted successfully" -ResponseData $insertResult.Output -TestStartTime $testStart -TestCategory "Data Operations"
 } else {
-    Write-TestResult "Insert Test Data" $false -ErrorMessage $insertResult.Error
+    Write-TestResult "Insert Test Data" $false -ErrorMessage $insertResult.Error -TestStartTime $testStart -TestCategory "Data Operations"
 }
 
 # Test 7: Select All Data
 Write-Host "Querying all employee data..." -ForegroundColor Yellow
+$testStart = Get-Date
 $selectAllQuery = "USE [$TestDatabase]; SELECT * FROM [dbo].[employees] ORDER BY id;"
 $selectAllResult = Invoke-SqlServerCommand -Query $selectAllQuery -Database $TestDatabase
 if ($selectAllResult.Success) {
-    Write-TestResult "Select All Data" $true "All employee records retrieved successfully" -ResponseData $selectAllResult.Output
+    Write-TestResult "Select All Data" $true "All employee records retrieved successfully" -ResponseData $selectAllResult.Output -TestStartTime $testStart -TestCategory "Query Operations"
 } else {
-    Write-TestResult "Select All Data" $false -ErrorMessage $selectAllResult.Error
+    Write-TestResult "Select All Data" $false -ErrorMessage $selectAllResult.Error -TestStartTime $testStart -TestCategory "Query Operations"
 }
 
 # Test 8: Conditional Queries

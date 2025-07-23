@@ -56,8 +56,13 @@ function Write-TestResult {
         [bool]$Success,
         [string]$Details = "",
         [string]$ErrorMessage = "",
-        [object]$ResponseData = $null
+        [object]$ResponseData = $null,
+        [datetime]$TestStartTime = (Get-Date),
+        [string]$TestCategory = "General"
     )
+    
+    $endTime = Get-Date
+    $duration = $endTime - $TestStartTime
     
     $result = @{
         TestName = $TestName
@@ -65,17 +70,29 @@ function Write-TestResult {
         Details = $Details
         ErrorMessage = $ErrorMessage
         ResponseData = $ResponseData
-        Timestamp = Get-Date
+        StartTime = $TestStartTime
+        EndTime = $endTime
+        Duration = $duration
+        DurationMs = [math]::Round($duration.TotalMilliseconds, 0)
+        DurationSeconds = [math]::Round($duration.TotalSeconds, 2)
+        Category = $TestCategory
+        Timestamp = $endTime  # For backward compatibility
     }
     
     $TestResults.Tests += $result
     
-    # Console output
+    # Console output with timing
     $status = if ($Success) { "✓" } else { "✗" }
     $color = if ($Success) { "Green" } else { "Red" }
+    $durationStr = if ($duration.TotalSeconds -lt 1) {
+        "$($result.DurationMs)ms"
+    } else {
+        "$($result.DurationSeconds)s"
+    }
     
     Write-Host "[$status] " -ForegroundColor $color -NoNewline
     Write-Host $TestName -NoNewline
+    Write-Host " ($durationStr)" -ForegroundColor Cyan -NoNewline
     if ($Details) {
         Write-Host " - $Details" -ForegroundColor Gray
     } else {
@@ -155,18 +172,20 @@ Write-Host ""
 
 # Test 1: Cluster Health
 Write-Host "Testing cluster health..." -ForegroundColor Yellow
+$testStart = Get-Date
 $healthResponse = Invoke-ElasticsearchRequest -Endpoint "/_cluster/health"
 if ($healthResponse.Success) {
     $health = $healthResponse.Data
     $healthStatus = $health.status
     $details = "Status: $healthStatus, Nodes: $($health.number_of_nodes), Active Shards: $($health.active_shards)"
-    Write-TestResult "Cluster Health Check" $true $details -ResponseData $health
+    Write-TestResult "Cluster Health Check" $true $details -ResponseData $health -TestStartTime $testStart -TestCategory "Connection"
 } else {
-    Write-TestResult "Cluster Health Check" $false -ErrorMessage $healthResponse.Error
+    Write-TestResult "Cluster Health Check" $false -ErrorMessage $healthResponse.Error -TestStartTime $testStart -TestCategory "Connection"
 }
 
 # Test 2: Create Index
 Write-Host "Creating test index..." -ForegroundColor Yellow
+$testStart = Get-Date
 $indexMapping = @{
     mappings = @{
         properties = @{
@@ -192,13 +211,14 @@ $indexMapping = @{
 
 $createResponse = Invoke-ElasticsearchRequest -Method "PUT" -Endpoint "/$TestIndexName" -Body $indexMapping
 if ($createResponse.Success) {
-    Write-TestResult "Create Test Index" $true "Index '$TestIndexName' created successfully" -ResponseData $createResponse.Data
+    Write-TestResult "Create Test Index" $true "Index '$TestIndexName' created successfully" -ResponseData $createResponse.Data -TestStartTime $testStart -TestCategory "Index Management"
 } else {
-    Write-TestResult "Create Test Index" $false -ErrorMessage $createResponse.Error
+    Write-TestResult "Create Test Index" $false -ErrorMessage $createResponse.Error -TestStartTime $testStart -TestCategory "Index Management"
 }
 
 # Test 3: Insert Documents
 Write-Host "Inserting test documents..." -ForegroundColor Yellow
+$testStart = Get-Date
 $testDocuments = @(
     @{
         title = "Artemis Backend Test Document 1"
@@ -247,9 +267,9 @@ foreach ($i in 0..($testDocuments.Count - 1)) {
 }
 
 if ($insertedDocs -eq $testDocuments.Count) {
-    Write-TestResult "Insert Test Documents" $true "$insertedDocs documents inserted successfully"
+    Write-TestResult "Insert Test Documents" $true "$insertedDocs documents inserted successfully" -TestStartTime $testStart -TestCategory "Document Operations"
 } else {
-    Write-TestResult "Insert Test Documents" $false -ErrorMessage "Only $insertedDocs out of $($testDocuments.Count) documents inserted"
+    Write-TestResult "Insert Test Documents" $false -ErrorMessage "Only $insertedDocs out of $($testDocuments.Count) documents inserted" -TestStartTime $testStart -TestCategory "Document Operations"
 }
 
 # Wait for indexing
@@ -257,15 +277,17 @@ Write-Host "Waiting for documents to be indexed..." -ForegroundColor Yellow
 Start-Sleep -Seconds 2
 
 # Test 4: Refresh Index
+$testStart = Get-Date
 $refreshResponse = Invoke-ElasticsearchRequest -Method "POST" -Endpoint "/$TestIndexName/_refresh"
 if ($refreshResponse.Success) {
-    Write-TestResult "Refresh Index" $true "Index refreshed for search availability"
+    Write-TestResult "Refresh Index" $true "Index refreshed for search availability" -TestStartTime $testStart -TestCategory "Index Management"
 } else {
-    Write-TestResult "Refresh Index" $false -ErrorMessage $refreshResponse.Error
+    Write-TestResult "Refresh Index" $false -ErrorMessage $refreshResponse.Error -TestStartTime $testStart -TestCategory "Index Management"
 }
 
 # Test 5: Search Documents
 Write-Host "Searching documents..." -ForegroundColor Yellow
+$testStart = Get-Date
 $searchQuery = @{
     query = @{
         match = @{
@@ -279,13 +301,14 @@ $searchResponse = Invoke-ElasticsearchRequest -Method "POST" -Endpoint "/$TestIn
 if ($searchResponse.Success) {
     $hits = $searchResponse.Data.hits
     $totalHits = $hits.total.value
-    Write-TestResult "Search Documents" $true "Found $totalHits documents matching search query" -ResponseData $hits
+    Write-TestResult "Search Documents" $true "Found $totalHits documents matching search query" -ResponseData $hits -TestStartTime $testStart -TestCategory "Search Operations"
 } else {
-    Write-TestResult "Search Documents" $false -ErrorMessage $searchResponse.Error
+    Write-TestResult "Search Documents" $false -ErrorMessage $searchResponse.Error -TestStartTime $testStart -TestCategory "Search Operations"
 }
 
 # Test 6: Aggregation Query
 Write-Host "Testing aggregations..." -ForegroundColor Yellow
+$testStart = Get-Date
 $aggregationQuery = @{
     size = 0
     aggs = @{
@@ -307,13 +330,14 @@ $aggResponse = Invoke-ElasticsearchRequest -Method "POST" -Endpoint "/$TestIndex
 if ($aggResponse.Success) {
     $categories = $aggResponse.Data.aggregations.categories.buckets
     $categoryCount = $categories.Count
-    Write-TestResult "Aggregation Query" $true "Aggregated $categoryCount categories successfully" -ResponseData $aggResponse.Data.aggregations
+    Write-TestResult "Aggregation Query" $true "Aggregated $categoryCount categories successfully" -ResponseData $aggResponse.Data.aggregations -TestStartTime $testStart -TestCategory "Search Operations"
 } else {
-    Write-TestResult "Aggregation Query" $false -ErrorMessage $aggResponse.Error
+    Write-TestResult "Aggregation Query" $false -ErrorMessage $aggResponse.Error -TestStartTime $testStart -TestCategory "Search Operations"
 }
 
 # Test 7: Update Document
 Write-Host "Testing document updates..." -ForegroundColor Yellow
+$testStart = Get-Date
 $updateDoc = @{
     doc = @{
         title = "Updated Artemis Backend Test Document 1"
@@ -324,33 +348,36 @@ $updateDoc = @{
 
 $updateResponse = Invoke-ElasticsearchRequest -Method "POST" -Endpoint "/$TestIndexName/_update/test-doc-1" -Body $updateDoc
 if ($updateResponse.Success) {
-    Write-TestResult "Update Document" $true "Document updated successfully" -ResponseData $updateResponse.Data
+    Write-TestResult "Update Document" $true "Document updated successfully" -ResponseData $updateResponse.Data -TestStartTime $testStart -TestCategory "Document Operations"
 } else {
-    Write-TestResult "Update Document" $false -ErrorMessage $updateResponse.Error
+    Write-TestResult "Update Document" $false -ErrorMessage $updateResponse.Error -TestStartTime $testStart -TestCategory "Document Operations"
 }
 
 # Test 8: Get Document by ID
 Write-Host "Testing document retrieval by ID..." -ForegroundColor Yellow
+$testStart = Get-Date
 $getResponse = Invoke-ElasticsearchRequest -Endpoint "/$TestIndexName/_doc/test-doc-1"
 if ($getResponse.Success) {
     $document = $getResponse.Data
-    Write-TestResult "Get Document by ID" $true "Document retrieved successfully (Version: $($document._version))" -ResponseData $document
+    Write-TestResult "Get Document by ID" $true "Document retrieved successfully (Version: $($document._version))" -ResponseData $document -TestStartTime $testStart -TestCategory "Document Operations"
 } else {
-    Write-TestResult "Get Document by ID" $false -ErrorMessage $getResponse.Error
+    Write-TestResult "Get Document by ID" $false -ErrorMessage $getResponse.Error -TestStartTime $testStart -TestCategory "Document Operations"
 }
 
 # Test 9: Count Documents
 Write-Host "Counting documents in index..." -ForegroundColor Yellow
+$testStart = Get-Date
 $countResponse = Invoke-ElasticsearchRequest -Endpoint "/$TestIndexName/_count"
 if ($countResponse.Success) {
     $count = $countResponse.Data.count
-    Write-TestResult "Count Documents" $true "$count documents found in index" -ResponseData $countResponse.Data
+    Write-TestResult "Count Documents" $true "$count documents found in index" -ResponseData $countResponse.Data -TestStartTime $testStart -TestCategory "Document Operations"
 } else {
-    Write-TestResult "Count Documents" $false -ErrorMessage $countResponse.Error
+    Write-TestResult "Count Documents" $false -ErrorMessage $countResponse.Error -TestStartTime $testStart -TestCategory "Document Operations"
 }
 
 # Test 10: Bulk Operations
 Write-Host "Testing bulk operations..." -ForegroundColor Yellow
+$testStart = Get-Date
 # Create bulk data with proper NDJSON formatting
 $currentTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ss"
 
@@ -388,9 +415,9 @@ $bulkResponse = Invoke-ElasticsearchRequest -Method "POST" -Endpoint "/_bulk" -B
 if ($bulkResponse.Success) {
     $items = $bulkResponse.Data.items
     $successCount = ($items | Where-Object { $_.index.status -eq 201 }).Count
-    Write-TestResult "Bulk Operations" $true "$successCount documents created via bulk API" -ResponseData $bulkResponse.Data
+    Write-TestResult "Bulk Operations" $true "$successCount documents created via bulk API" -ResponseData $bulkResponse.Data -TestStartTime $testStart -TestCategory "Document Operations"
 } else {
-    Write-TestResult "Bulk Operations" $false -ErrorMessage $bulkResponse.Error
+    Write-TestResult "Bulk Operations" $false -ErrorMessage $bulkResponse.Error -TestStartTime $testStart -TestCategory "Document Operations"
 }
 
 # Cleanup (unless skipped)
@@ -398,11 +425,12 @@ if (-not $SkipCleanup) {
     Write-Host ""
     Write-Host "Cleaning up test data..." -ForegroundColor Yellow
     
+    $testStart = Get-Date
     $deleteResponse = Invoke-ElasticsearchRequest -Method "DELETE" -Endpoint "/$TestIndexName"
     if ($deleteResponse.Success) {
-        Write-TestResult "Cleanup Test Index" $true "Test index '$TestIndexName' deleted successfully"
+        Write-TestResult "Cleanup Test Index" $true "Test index '$TestIndexName' deleted successfully" -TestStartTime $testStart -TestCategory "Index Management"
     } else {
-        Write-TestResult "Cleanup Test Index" $false -ErrorMessage $deleteResponse.Error
+        Write-TestResult "Cleanup Test Index" $false -ErrorMessage $deleteResponse.Error -TestStartTime $testStart -TestCategory "Index Management"
     }
 } else {
     Write-Host ""

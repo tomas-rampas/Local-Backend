@@ -224,6 +224,131 @@ function Invoke-ServiceTest {
     }
 }
 
+function Write-ServiceSummaryTable {
+    param(
+        [array]$ServicesToTest,
+        [hashtable]$ServiceResults,
+        [hashtable]$Statistics
+    )
+    
+    if (-not $ServicesToTest -or $ServicesToTest.Count -eq 0) {
+        Write-Host "No services to display" -ForegroundColor Gray
+        return
+    }
+    
+    # Calculate column widths
+    $maxServiceWidth = ($ServicesToTest | Measure-Object -Maximum Length).Maximum
+    $maxServiceWidth = [Math]::Max($maxServiceWidth, 12)
+    
+    # Table structure
+    $headerLine = "┌" + ("─" * ($maxServiceWidth + 2)) + "┬" + ("─" * 12) + "┬" + ("─" * 12) + "┬" + ("─" * 12) + "┬" + ("─" * 16) + "┐"
+    $separatorLine = "├" + ("─" * ($maxServiceWidth + 2)) + "┼" + ("─" * 12) + "┼" + ("─" * 12) + "┼" + ("─" * 12) + "┼" + ("─" * 16) + "┤"
+    $footerLine = "└" + ("─" * ($maxServiceWidth + 2)) + "┴" + ("─" * 12) + "┴" + ("─" * 12) + "┴" + ("─" * 12) + "┴" + ("─" * 16) + "┘"
+    
+    Write-Host ""
+    Write-Host $headerLine -ForegroundColor Gray
+    Write-Host ("│ " + "SERVICE PERFORMANCE SUMMARY".PadRight($maxServiceWidth) + " │            │            │            │                │") -ForegroundColor White
+    Write-Host $separatorLine -ForegroundColor Gray
+    Write-Host ("│ " + "Service".PadRight($maxServiceWidth) + " │ " + "Status".PadRight(10) + " │ " + "Tests".PadRight(10) + " │ " + "Duration".PadRight(10) + " │ " + "Success Rate".PadRight(14) + " │") -ForegroundColor Yellow
+    Write-Host $separatorLine -ForegroundColor Gray
+    
+    # Service rows
+    foreach ($service in $ServicesToTest) {
+        if ($ServiceResults.ContainsKey($service)) {
+            $result = $ServiceResults[$service]
+            
+            # Status with icon
+            $statusIcon = switch ($result.OverallStatus) {
+                "SUCCESS" { "✓" }
+                "WARNING" { "⚠" }
+                "FAILURE" { "✗" }
+                default { "?" }
+            }
+            $statusStr = "$statusIcon $($result.OverallStatus)"
+            $statusColor = switch ($result.OverallStatus) {
+                "SUCCESS" { "Green" }
+                "WARNING" { "Yellow" }
+                "FAILURE" { "Red" }
+                default { "Gray" }
+            }
+            
+            # Tests
+            if ($result.Tests) {
+                $passed = ($result.Tests | Where-Object { $_.Success }).Count
+                $total = $result.Tests.Count
+                $testsStr = "$passed/$total"
+                $successRate = if ($total -gt 0) { [math]::Round(($passed / $total) * 100, 0) } else { 0 }
+                $rateStr = "$successRate%"
+            } else {
+                $testsStr = "0/0"
+                $rateStr = "N/A"
+                $successRate = 0
+            }
+            
+            # Duration
+            $durationStr = Format-Duration $result.Duration
+            
+            $rateColor = if ($successRate -eq 100) { "Green" } elseif ($successRate -ge 75) { "Yellow" } else { "Red" }
+            
+            Write-Host ("│ " + $service.PadRight($maxServiceWidth) + " │ ") -ForegroundColor Gray -NoNewline
+            Write-Host $statusStr.PadRight(10) -ForegroundColor $statusColor -NoNewline
+            Write-Host " │ " -ForegroundColor Gray -NoNewline
+            Write-Host $testsStr.PadRight(10) -ForegroundColor Blue -NoNewline
+            Write-Host " │ " -ForegroundColor Gray -NoNewline
+            Write-Host $durationStr.PadRight(10) -ForegroundColor Cyan -NoNewline
+            Write-Host " │ " -ForegroundColor Gray -NoNewline
+            Write-Host $rateStr.PadRight(14) -ForegroundColor $rateColor -NoNewline
+            Write-Host " │" -ForegroundColor Gray
+        } else {
+            Write-Host ("│ " + $service.PadRight($maxServiceWidth) + " │ ") -ForegroundColor Gray -NoNewline
+            Write-Host "? UNKNOWN".PadRight(10) -ForegroundColor Gray -NoNewline
+            Write-Host " │ " -ForegroundColor Gray -NoNewline
+            Write-Host "N/A".PadRight(10) -ForegroundColor Gray -NoNewline
+            Write-Host " │ " -ForegroundColor Gray -NoNewline
+            Write-Host "N/A".PadRight(10) -ForegroundColor Gray -NoNewline
+            Write-Host " │ " -ForegroundColor Gray -NoNewline
+            Write-Host "N/A".PadRight(14) -ForegroundColor Gray -NoNewline
+            Write-Host " │" -ForegroundColor Gray
+        }
+    }
+    
+    # Overall summary row
+    Write-Host $separatorLine -ForegroundColor Gray
+    
+    $overallStatus = if ($Statistics.FailedServices -eq 0 -and $Statistics.WarningServices -eq 0) {
+        "✓ SUCCESS"
+    } elseif ($Statistics.FailedServices -eq 0) {
+        "⚠ WARNING"
+    } else {
+        "✗ FAILURE"
+    }
+    
+    $overallStatusColor = if ($Statistics.FailedServices -eq 0 -and $Statistics.WarningServices -eq 0) {
+        "Green"
+    } elseif ($Statistics.FailedServices -eq 0) {
+        "Yellow"
+    } else {
+        "Red"
+    }
+    
+    $overallTestsStr = "$($Statistics.SuccessfulTests)/$($Statistics.TotalTests)"
+    $overallRateStr = "$($Statistics.SuccessRate)%"
+    $overallRateColor = if ($Statistics.SuccessRate -eq 100) { "Green" } elseif ($Statistics.SuccessRate -ge 75) { "Yellow" } else { "Red" }
+    
+    Write-Host ("│ " + "OVERALL".PadRight($maxServiceWidth) + " │ ") -ForegroundColor White -NoNewline
+    Write-Host $overallStatus.PadRight(10) -ForegroundColor $overallStatusColor -NoNewline
+    Write-Host " │ " -ForegroundColor Gray -NoNewline
+    Write-Host $overallTestsStr.PadRight(10) -ForegroundColor Blue -NoNewline
+    Write-Host " │ " -ForegroundColor Gray -NoNewline
+    Write-Host "Multiple".PadRight(10) -ForegroundColor Cyan -NoNewline
+    Write-Host " │ " -ForegroundColor Gray -NoNewline
+    Write-Host $overallRateStr.PadRight(14) -ForegroundColor $overallRateColor -NoNewline
+    Write-Host " │" -ForegroundColor Gray
+    
+    Write-Host $footerLine -ForegroundColor Gray
+    Write-Host ""
+}
+
 function Format-Duration {
     param([TimeSpan]$Duration)
     
@@ -539,47 +664,90 @@ if ($TestResults.Statistics.FailedServices -eq 0 -and $TestResults.Statistics.Wa
     $TestResults.Summary = "One or more services failed testing"
 }
 
-# Display final summary
-Write-Header "COMPREHENSIVE TEST RESULTS SUMMARY"
+# Enhanced cross-service analysis
+$allTests = @()
+$serviceTimes = @{}
+$serviceTestCounts = @{}
 
-Write-Host ""
-Write-Host "⏱️  Total Duration: " -NoNewline
-Write-Host "$(Format-Duration $TestResults.Duration)" -ForegroundColor Blue
-
-Write-Host ""
-Write-Host "📊 Service Results:" -ForegroundColor Blue
-foreach ($service in $ServicesToTest) {
-    if ($TestResults.ServiceTests.ContainsKey($service)) {
-        $result = $TestResults.ServiceTests[$service]
-        Write-Host "  $($service.PadRight(12)): " -NoNewline
-        Write-StatusBadge $result.OverallStatus
-        
-        if ($result.Tests) {
-            $passed = ($result.Tests | Where-Object { $_.Success }).Count
-            $total = $result.Tests.Count
-            $rate = if ($total -gt 0) { [math]::Round(($passed / $total) * 100, 0) } else { 0 }
-            Write-Host "    Tests: $passed/$total ($rate%) • Duration: $(Format-Duration $result.Duration)" -ForegroundColor Gray
+foreach ($serviceName in $TestResults.ServiceTests.Keys) {
+    $serviceResult = $TestResults.ServiceTests[$serviceName]
+    $serviceTimes[$serviceName] = $serviceResult.Duration
+    
+    if ($serviceResult.Tests) {
+        $serviceTestCounts[$serviceName] = @{
+            Total = $serviceResult.Tests.Count
+            Passed = ($serviceResult.Tests | Where-Object { $_.Success }).Count
+            Failed = ($serviceResult.Tests | Where-Object { -not $_.Success }).Count
         }
-    } else {
-        Write-Host "  $($service.PadRight(12)): " -NoNewline
-        Write-StatusBadge "UNKNOWN" "Not tested"
+        $allTests += $serviceResult.Tests
     }
 }
 
-Write-Host ""
-Write-Host "📈 Overall Statistics:" -ForegroundColor Blue
-Write-Host "  Services Tested:    $($TestResults.Statistics.TestedServices)/$($TestResults.Statistics.TotalServices)" -ForegroundColor Gray
-Write-Host "  ✓ Successful:       $($TestResults.Statistics.SuccessfulServices)" -ForegroundColor Green
-Write-Host "  ⚠ With Warnings:    $($TestResults.Statistics.WarningServices)" -ForegroundColor Yellow  
-Write-Host "  ✗ Failed:           $($TestResults.Statistics.FailedServices)" -ForegroundColor Red
-Write-Host "  Total Tests Run:    $($TestResults.Statistics.TotalTests)" -ForegroundColor Gray
-Write-Host "  Tests Passed:       $($TestResults.Statistics.SuccessfulTests)" -ForegroundColor Gray
-Write-Host "  Success Rate:       $($TestResults.Statistics.SuccessRate)%" -ForegroundColor Gray
+# Calculate timing statistics
+$avgServiceTime = if ($serviceTimes.Count -gt 0) { 
+    [math]::Round(($serviceTimes.Values | ForEach-Object { $_.TotalSeconds } | Measure-Object -Average).Average, 2) 
+} else { 0 }
+$fastestService = if ($serviceTimes.Count -gt 0) { 
+    ($serviceTimes.GetEnumerator() | Sort-Object { $_.Value.TotalSeconds } | Select-Object -First 1)
+} else { $null }
+$slowestService = if ($serviceTimes.Count -gt 0) { 
+    ($serviceTimes.GetEnumerator() | Sort-Object { $_.Value.TotalSeconds } -Descending | Select-Object -First 1)
+} else { $null }
+
+# Display enhanced table-based summary
+Write-Header "ARTEMIS BACKEND COMPREHENSIVE TEST REPORT"
 
 Write-Host ""
-Write-Host "🎯 Overall Status: " -NoNewline
+Write-Host "🎯 EXECUTION OVERVIEW" -ForegroundColor Yellow
+Write-Host "Test Suite: " -NoNewline
+Write-Host "Artemis Backend Full Infrastructure Test" -ForegroundColor Blue
+Write-Host "Started: " -NoNewline
+Write-Host "$($TestResults.StartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor Blue
+Write-Host "Ended: " -NoNewline
+Write-Host "$($TestResults.EndTime.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor Blue
+Write-Host "Total Duration: " -NoNewline
+Write-Host "$(Format-Duration $TestResults.Duration)" -ForegroundColor Blue
+Write-Host "Services Tested: " -NoNewline
+Write-Host "$($TestResults.Statistics.TestedServices)" -ForegroundColor Blue
+
+Write-Host ""
+Write-Host "⏱️ TIMING ANALYSIS" -ForegroundColor Yellow
+Write-Host "Average Service Time: " -NoNewline
+Write-Host "$avgServiceTime seconds" -ForegroundColor Blue
+if ($fastestService) {
+    Write-Host "Fastest Service: " -NoNewline
+    Write-Host "$($fastestService.Key) ($(Format-Duration $fastestService.Value))" -ForegroundColor Green
+}
+if ($slowestService) {
+    Write-Host "Slowest Service: " -NoNewline
+    Write-Host "$($slowestService.Key) ($(Format-Duration $slowestService.Value))" -ForegroundColor Yellow
+}
+
+# Display structured cross-service summary table
+Write-ServiceSummaryTable -ServicesToTest $ServicesToTest -ServiceResults $TestResults.ServiceTests -Statistics $TestResults.Statistics
+
+Write-Host "🎯 OVERALL ASSESSMENT" -ForegroundColor Yellow
+Write-Host "Status: " -NoNewline
 Write-StatusBadge $TestResults.OverallStatus
+Write-Host "Summary: " -NoNewline
 Write-Host $TestResults.Summary -ForegroundColor Gray
+
+# Enhanced reliability score
+$reliabilityScore = 0
+if ($TestResults.Statistics.TestedServices -gt 0) {
+    $serviceSuccessRate = ($TestResults.Statistics.SuccessfulServices / $TestResults.Statistics.TestedServices) * 100
+    $testSuccessRate = $TestResults.Statistics.SuccessRate
+    $timelinessScore = if ($TestResults.Duration.TotalMinutes -le 5) { 100 } elseif ($TestResults.Duration.TotalMinutes -le 10) { 80 } else { 60 }
+    
+    $reliabilityScore = [math]::Round(($serviceSuccessRate * 0.4 + $testSuccessRate * 0.4 + $timelinessScore * 0.2), 1)
+}
+
+Write-Host ""
+Write-Host "📊 SYSTEM RELIABILITY SCORE: " -NoNewline -ForegroundColor Yellow
+$scoreColor = if ($reliabilityScore -ge 90) { "Green" } elseif ($reliabilityScore -ge 70) { "Yellow" } else { "Red" }
+Write-Host "$reliabilityScore/100 " -ForegroundColor $scoreColor -NoNewline
+$rating = if ($reliabilityScore -ge 95) { "Excellent" } elseif ($reliabilityScore -ge 85) { "Good" } elseif ($reliabilityScore -ge 70) { "Fair" } else { "Needs Attention" }
+Write-Host "($rating)" -ForegroundColor $scoreColor
 
 # Show failed tests summary if any
 $failedServices = $TestResults.ServiceTests.Values | Where-Object { $_.OverallStatus -eq "FAILURE" }

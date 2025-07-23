@@ -48,14 +48,103 @@ $TestResults = @{
     Summary = ""
 }
 
+function Write-TestResultsTable {
+    param(
+        [array]$Tests,
+        [string]$ServiceName,
+        [hashtable]$ServiceInfo = @{}
+    )
+    
+    if (-not $Tests -or $Tests.Count -eq 0) {
+        Write-Host "No test results to display" -ForegroundColor Gray
+        return
+    }
+    
+    # Group tests by category
+    $testsByCategory = $Tests | Group-Object Category | Sort-Object Name
+    
+    # Calculate column widths
+    $maxCategoryWidth = ($testsByCategory.Name | Measure-Object -Maximum Length).Maximum
+    $maxCategoryWidth = [Math]::Max($maxCategoryWidth, 15)
+    
+    # Table header
+    $tableWidth = $maxCategoryWidth + 45
+    $headerLine = "┌" + ("─" * ($maxCategoryWidth + 2)) + "┬" + ("─" * 12) + "┬" + ("─" * 12) + "┬" + ("─" * 15) + "┐"
+    $separatorLine = "├" + ("─" * ($maxCategoryWidth + 2)) + "┼" + ("─" * 12) + "┼" + ("─" * 12) + "┼" + ("─" * 15) + "┤"
+    $footerLine = "└" + ("─" * ($maxCategoryWidth + 2)) + "┴" + ("─" * 12) + "┴" + ("─" * 12) + "┴" + ("─" * 15) + "┘"
+    
+    Write-Host ""
+    Write-Host $headerLine -ForegroundColor Gray
+    Write-Host ("│ " + "$ServiceName SERVICE TEST RESULTS".PadRight($maxCategoryWidth) + " │            │            │               │") -ForegroundColor White
+    Write-Host $separatorLine -ForegroundColor Gray
+    Write-Host ("│ " + "Category".PadRight($maxCategoryWidth) + " │ " + "Tests".PadRight(10) + " │ " + "Success".PadRight(10) + " │ " + "Avg Time".PadRight(13) + " │") -ForegroundColor Yellow
+    Write-Host $separatorLine -ForegroundColor Gray
+    
+    # Category rows
+    foreach ($category in $testsByCategory) {
+        $categoryTests = $category.Group
+        $categoryPassed = ($categoryTests | Where-Object { $_.Success }).Count
+        $categoryTotal = $categoryTests.Count
+        $categoryRate = if ($categoryTotal -gt 0) { [math]::Round(($categoryPassed / $categoryTotal) * 100, 0) } else { 0 }
+        $categoryAvgTime = if ($categoryTests.Count -gt 0) { 
+            [math]::Round(($categoryTests | Measure-Object DurationSeconds -Average).Average, 2) 
+        } else { 0 }
+        
+        $testsStr = "$categoryPassed/$categoryTotal"
+        $successStr = "$categoryRate%"
+        $timeStr = "${categoryAvgTime}s"
+        
+        $successColor = if ($categoryRate -eq 100) { "Green" } elseif ($categoryRate -ge 50) { "Yellow" } else { "Red" }
+        
+        Write-Host ("│ " + $category.Name.PadRight($maxCategoryWidth) + " │ ") -ForegroundColor Gray -NoNewline
+        Write-Host $testsStr.PadRight(10) -ForegroundColor Blue -NoNewline
+        Write-Host " │ " -ForegroundColor Gray -NoNewline
+        Write-Host $successStr.PadRight(10) -ForegroundColor $successColor -NoNewline
+        Write-Host " │ " -ForegroundColor Gray -NoNewline
+        Write-Host $timeStr.PadRight(13) -ForegroundColor Cyan -NoNewline
+        Write-Host " │" -ForegroundColor Gray
+    }
+    
+    # Total row
+    $totalPassed = ($Tests | Where-Object { $_.Success }).Count
+    $totalTests = $Tests.Count
+    $totalRate = if ($totalTests -gt 0) { [math]::Round(($totalPassed / $totalTests) * 100, 0) } else { 0 }
+    $totalAvgTime = if ($Tests.Count -gt 0) { 
+        [math]::Round(($Tests | Measure-Object DurationSeconds -Average).Average, 2) 
+    } else { 0 }
+    
+    Write-Host $separatorLine -ForegroundColor Gray
+    
+    $totalTestsStr = "$totalPassed/$totalTests"
+    $totalSuccessStr = "$totalRate%"
+    $totalTimeStr = "${totalAvgTime}s"
+    $totalSuccessColor = if ($totalRate -eq 100) { "Green" } elseif ($totalRate -ge 75) { "Yellow" } else { "Red" }
+    
+    Write-Host ("│ " + "TOTAL".PadRight($maxCategoryWidth) + " │ ") -ForegroundColor White -NoNewline
+    Write-Host $totalTestsStr.PadRight(10) -ForegroundColor Blue -NoNewline
+    Write-Host " │ " -ForegroundColor Gray -NoNewline
+    Write-Host $totalSuccessStr.PadRight(10) -ForegroundColor $totalSuccessColor -NoNewline
+    Write-Host " │ " -ForegroundColor Gray -NoNewline
+    Write-Host $totalTimeStr.PadRight(13) -ForegroundColor Cyan -NoNewline
+    Write-Host " │" -ForegroundColor Gray
+    
+    Write-Host $footerLine -ForegroundColor Gray
+    Write-Host ""
+}
+
 function Write-TestResult {
     param(
         [string]$TestName,
         [bool]$Success,
         [string]$Details = "",
         [string]$ErrorMessage = "",
-        [object]$ResponseData = $null
+        [object]$ResponseData = $null,
+        [datetime]$TestStartTime = (Get-Date),
+        [string]$TestCategory = "General"
     )
+    
+    $endTime = Get-Date
+    $duration = $endTime - $TestStartTime
     
     $result = @{
         TestName = $TestName
@@ -63,17 +152,29 @@ function Write-TestResult {
         Details = $Details
         ErrorMessage = $ErrorMessage
         ResponseData = $ResponseData
-        Timestamp = Get-Date
+        StartTime = $TestStartTime
+        EndTime = $endTime
+        Duration = $duration
+        DurationMs = [math]::Round($duration.TotalMilliseconds, 0)
+        DurationSeconds = [math]::Round($duration.TotalSeconds, 2)
+        Category = $TestCategory
+        Timestamp = $endTime  # For backward compatibility
     }
     
     $TestResults.Tests += $result
     
-    # Console output
+    # Console output with timing
     $status = if ($Success) { "✓" } else { "✗" }
     $color = if ($Success) { "Green" } else { "Red" }
+    $durationStr = if ($duration.TotalSeconds -lt 1) {
+        "$($result.DurationMs)ms"
+    } else {
+        "$($result.DurationSeconds)s"
+    }
     
     Write-Host "[$status] " -ForegroundColor $color -NoNewline
     Write-Host $TestName -NoNewline
+    Write-Host " ($durationStr)" -ForegroundColor Cyan -NoNewline
     if ($Details) {
         Write-Host " - $Details" -ForegroundColor Gray
     } else {
@@ -179,24 +280,27 @@ Write-Host ""
 
 # Test 1: Connection Test
 Write-Host "Testing Kafka connection..." -ForegroundColor Yellow
+$testStart = Get-Date
 if (Test-KafkaConnection) {
-    Write-TestResult "Connection Test" $true "Successfully connected to Kafka broker"
+    Write-TestResult "Connection Test" $true "Successfully connected to Kafka broker" -TestStartTime $testStart -TestCategory "Connection"
 } else {
-    Write-TestResult "Connection Test" $false -ErrorMessage "Failed to connect to Kafka broker"
+    Write-TestResult "Connection Test" $false -ErrorMessage "Failed to connect to Kafka broker" -TestStartTime $testStart -TestCategory "Connection"
 }
 
 # Test 2: List Topics (initial)
 Write-Host "Listing existing topics..." -ForegroundColor Yellow
+$testStart = Get-Date
 $listTopicsResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @("--bootstrap-server", "kafka:9092", "--list")
 if ($listTopicsResult.Success) {
     $topicCount = ($listTopicsResult.Output | Where-Object { $_ -match '\w+' }).Count
-    Write-TestResult "List Topics" $true "Found $topicCount existing topics" -ResponseData $listTopicsResult.Output
+    Write-TestResult "List Topics" $true "Found $topicCount existing topics" -ResponseData $listTopicsResult.Output -TestStartTime $testStart -TestCategory "Topic Management"
 } else {
-    Write-TestResult "List Topics" $false -ErrorMessage $listTopicsResult.Error
+    Write-TestResult "List Topics" $false -ErrorMessage $listTopicsResult.Error -TestStartTime $testStart -TestCategory "Topic Management"
 }
 
 # Test 3: Create Topic (single partition)
 Write-Host "Creating single-partition test topic..." -ForegroundColor Yellow
+$testStart = Get-Date
 $createTopicResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @(
     "--bootstrap-server", "kafka:9092",
     "--create",
@@ -205,13 +309,14 @@ $createTopicResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.s
     "--replication-factor", "1"
 )
 if ($createTopicResult.Success -or $createTopicResult.Error -match "already exists") {
-    Write-TestResult "Create Single-Partition Topic" $true "Topic '$TestTopic' created successfully"
+    Write-TestResult "Create Single-Partition Topic" $true "Topic '$TestTopic' created successfully" -TestStartTime $testStart -TestCategory "Topic Management"
 } else {
-    Write-TestResult "Create Single-Partition Topic" $false -ErrorMessage $createTopicResult.Error
+    Write-TestResult "Create Single-Partition Topic" $false -ErrorMessage $createTopicResult.Error -TestStartTime $testStart -TestCategory "Topic Management"
 }
 
 # Test 4: Create Multi-Partition Topic
 Write-Host "Creating multi-partition test topic..." -ForegroundColor Yellow
+$testStart = Get-Date
 $createMultiTopicResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @(
     "--bootstrap-server", "kafka:9092",
     "--create",
@@ -220,26 +325,28 @@ $createMultiTopicResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-top
     "--replication-factor", "1"
 )
 if ($createMultiTopicResult.Success -or $createMultiTopicResult.Error -match "already exists") {
-    Write-TestResult "Create Multi-Partition Topic" $true "Topic '$TestTopicMultiPartition' created with 3 partitions"
+    Write-TestResult "Create Multi-Partition Topic" $true "Topic '$TestTopicMultiPartition' created with 3 partitions" -TestStartTime $testStart -TestCategory "Topic Management"
 } else {
-    Write-TestResult "Create Multi-Partition Topic" $false -ErrorMessage $createMultiTopicResult.Error
+    Write-TestResult "Create Multi-Partition Topic" $false -ErrorMessage $createMultiTopicResult.Error -TestStartTime $testStart -TestCategory "Topic Management"
 }
 
 # Test 5: Describe Topic
 Write-Host "Describing topic configuration..." -ForegroundColor Yellow
+$testStart = Get-Date
 $describeTopicResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-topics.sh" -Arguments @(
     "--bootstrap-server", "kafka:9092",
     "--describe",
     "--topic", $TestTopic
 )
 if ($describeTopicResult.Success) {
-    Write-TestResult "Describe Topic" $true "Topic description retrieved successfully" -ResponseData $describeTopicResult.Output
+    Write-TestResult "Describe Topic" $true "Topic description retrieved successfully" -ResponseData $describeTopicResult.Output -TestStartTime $testStart -TestCategory "Topic Management"
 } else {
-    Write-TestResult "Describe Topic" $false -ErrorMessage $describeTopicResult.Error
+    Write-TestResult "Describe Topic" $false -ErrorMessage $describeTopicResult.Error -TestStartTime $testStart -TestCategory "Topic Management"
 }
 
 # Test 6: Produce Messages (Simple)
 Write-Host "Producing simple messages..." -ForegroundColor Yellow
+$testStart = Get-Date
 $messages = @(
     "Hello from Artemis Backend Test - $(Get-Date)",
     "Test message 2: JSON data test",
@@ -271,19 +378,20 @@ if ($produceResult -and $producedCount -eq $messages.Count) {
     if ($offsetResult.Success -and $offsetResult.Output -match ":(\d+)$") {
         $messageCount = [int]$matches[1]
         if ($messageCount -ge $producedCount) {
-            Write-TestResult "Produce Messages" $true "$producedCount messages produced successfully (verified: $messageCount messages in topic)"
+            Write-TestResult "Produce Messages" $true "$producedCount messages produced successfully (verified: $messageCount messages in topic)" -TestStartTime $testStart -TestCategory "Message Operations"
         } else {
-            Write-TestResult "Produce Messages" $false -ErrorMessage "Messages not properly stored (produced: $producedCount, stored: $messageCount)"
+            Write-TestResult "Produce Messages" $false -ErrorMessage "Messages not properly stored (produced: $producedCount, stored: $messageCount)" -TestStartTime $testStart -TestCategory "Message Operations"
         }
     } else {
-        Write-TestResult "Produce Messages" $true "$producedCount messages produced successfully (verification failed, but production succeeded)"
+        Write-TestResult "Produce Messages" $true "$producedCount messages produced successfully (verification failed, but production succeeded)" -TestStartTime $testStart -TestCategory "Message Operations"
     }
 } else {
-    Write-TestResult "Produce Messages" $false -ErrorMessage "Failed to produce all messages ($producedCount/$($messages.Count))"
+    Write-TestResult "Produce Messages" $false -ErrorMessage "Failed to produce all messages ($producedCount/$($messages.Count))" -TestStartTime $testStart -TestCategory "Message Operations"
 }
 
 # Test 7: Produce JSON Messages
 Write-Host "Producing structured JSON messages..." -ForegroundColor Yellow
+$testStart = Get-Date
 $jsonMessages = @(
     @{
         id = 1
@@ -333,9 +441,9 @@ foreach ($jsonMsg in $jsonMessages) {
 }
 
 if ($jsonProducedCount -eq $jsonMessages.Count) {
-    Write-TestResult "Produce JSON Messages" $true "$jsonProducedCount JSON messages produced successfully"
+    Write-TestResult "Produce JSON Messages" $true "$jsonProducedCount JSON messages produced successfully" -TestStartTime $testStart -TestCategory "Message Operations"
 } else {
-    Write-TestResult "Produce JSON Messages" $false -ErrorMessage "Failed to produce all JSON messages ($jsonProducedCount/$($jsonMessages.Count))"
+    Write-TestResult "Produce JSON Messages" $false -ErrorMessage "Failed to produce all JSON messages ($jsonProducedCount/$($jsonMessages.Count))" -TestStartTime $testStart -TestCategory "Message Operations"
 }
 
 # Wait a moment for messages to be available
@@ -344,6 +452,7 @@ Start-Sleep -Seconds 3
 
 # Test 8: Consume Messages (from beginning)
 Write-Host "Consuming messages from beginning..." -ForegroundColor Yellow
+$testStart = Get-Date
 $consumeResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-console-consumer.sh" -Arguments @(
     "--bootstrap-server", "kafka:9092",
     "--topic", $TestTopic,
@@ -354,13 +463,14 @@ $consumeResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-console-cons
 
 if ($consumeResult.Success) {
     $consumedMessages = ($consumeResult.Output | Where-Object { $_ -match '\w+' }).Count
-    Write-TestResult "Consume Messages" $true "Consumed $consumedMessages messages from topic" -ResponseData $consumeResult.Output
+    Write-TestResult "Consume Messages" $true "Consumed $consumedMessages messages from topic" -ResponseData $consumeResult.Output -TestStartTime $testStart -TestCategory "Message Operations"
 } else {
-    Write-TestResult "Consume Messages" $false -ErrorMessage $consumeResult.Error
+    Write-TestResult "Consume Messages" $false -ErrorMessage $consumeResult.Error -TestStartTime $testStart -TestCategory "Message Operations"
 }
 
 # Test 9: Produce to Multi-Partition Topic
 Write-Host "Testing multi-partition topic..." -ForegroundColor Yellow
+$testStart = Get-Date
 $multiPartitionMessages = @(
     "Partition test message 1",
     "Partition test message 2", 
@@ -383,13 +493,14 @@ foreach ($msg in $multiPartitionMessages) {
 }
 
 if ($multiProducedCount -eq $multiPartitionMessages.Count) {
-    Write-TestResult "Multi-Partition Produce" $true "$multiProducedCount messages produced to multi-partition topic"
+    Write-TestResult "Multi-Partition Produce" $true "$multiProducedCount messages produced to multi-partition topic" -TestStartTime $testStart -TestCategory "Message Operations"
 } else {
-    Write-TestResult "Multi-Partition Produce" $false -ErrorMessage "Failed to produce all messages to multi-partition topic"
+    Write-TestResult "Multi-Partition Produce" $false -ErrorMessage "Failed to produce all messages to multi-partition topic" -TestStartTime $testStart -TestCategory "Message Operations"
 }
 
 # Test 10: Consumer Groups
 Write-Host "Testing consumer group functionality..." -ForegroundColor Yellow
+$testStart = Get-Date
 $consumerGroupId = "artemis-test-group-$(Get-Date -Format 'HHmmss')"
 $consumerGroupResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-console-consumer.sh" -Arguments @(
     "--bootstrap-server", "kafka:9092",
@@ -400,26 +511,28 @@ $consumerGroupResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-consol
 ) -TimeoutSeconds 80
 
 if ($consumerGroupResult.Success) {
-    Write-TestResult "Consumer Group Test" $true "Consumer group '$consumerGroupId' created and consumed messages" -ResponseData @{GroupId = $consumerGroupId; Output = $consumerGroupResult.Output}
+    Write-TestResult "Consumer Group Test" $true "Consumer group '$consumerGroupId' created and consumed messages" -ResponseData @{GroupId = $consumerGroupId; Output = $consumerGroupResult.Output} -TestStartTime $testStart -TestCategory "Message Operations"
 } else {
-    Write-TestResult "Consumer Group Test" $false -ErrorMessage $consumerGroupResult.Error
+    Write-TestResult "Consumer Group Test" $false -ErrorMessage $consumerGroupResult.Error -TestStartTime $testStart -TestCategory "Message Operations"
 }
 
 # Test 11: List Consumer Groups
 Write-Host "Listing consumer groups..." -ForegroundColor Yellow
+$testStart = Get-Date
 $listGroupsResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-consumer-groups.sh" -Arguments @(
     "--bootstrap-server", "kafka:9092",
     "--list"
 )
 if ($listGroupsResult.Success) {
     $groupCount = ($listGroupsResult.Output | Where-Object { $_ -match '\w+' }).Count
-    Write-TestResult "List Consumer Groups" $true "Found $groupCount consumer groups" -ResponseData $listGroupsResult.Output
+    Write-TestResult "List Consumer Groups" $true "Found $groupCount consumer groups" -ResponseData $listGroupsResult.Output -TestStartTime $testStart -TestCategory "Topic Management"
 } else {
-    Write-TestResult "List Consumer Groups" $false -ErrorMessage $listGroupsResult.Error
+    Write-TestResult "List Consumer Groups" $false -ErrorMessage $listGroupsResult.Error -TestStartTime $testStart -TestCategory "Topic Management"
 }
 
 # Test 12: Topic Configuration
 Write-Host "Testing topic configuration..." -ForegroundColor Yellow
+$testStart = Get-Date
 $configResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-configs.sh" -Arguments @(
     "--bootstrap-server", "kafka:9092",
     "--entity-type", "topics",
@@ -427,33 +540,35 @@ $configResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-configs.sh" -
     "--describe"
 )
 if ($configResult.Success) {
-    Write-TestResult "Topic Configuration" $true "Topic configuration retrieved successfully" -ResponseData $configResult.Output
+    Write-TestResult "Topic Configuration" $true "Topic configuration retrieved successfully" -ResponseData $configResult.Output -TestStartTime $testStart -TestCategory "Topic Management"
 } else {
-    Write-TestResult "Topic Configuration" $false -ErrorMessage $configResult.Error
+    Write-TestResult "Topic Configuration" $false -ErrorMessage $configResult.Error -TestStartTime $testStart -TestCategory "Topic Management"
 }
 
 # Test 13: Kafka Log Dirs (if available)
 Write-Host "Checking Kafka log directories..." -ForegroundColor Yellow
+$testStart = Get-Date
 $logDirsResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-log-dirs.sh" -Arguments @(
     "--bootstrap-server", "kafka:9092",
     "--describe"
 ) -TimeoutSeconds 15
 if ($logDirsResult.Success) {
-    Write-TestResult "Log Directories Check" $true "Kafka log directories accessible" -ResponseData $logDirsResult.Output
+    Write-TestResult "Log Directories Check" $true "Kafka log directories accessible" -ResponseData $logDirsResult.Output -TestStartTime $testStart -TestCategory "Topic Management"
 } else {
     # This might not be available in all Kafka versions
-    Write-TestResult "Log Directories Check" $true "Log directories test completed (may not be available in all versions)"
+    Write-TestResult "Log Directories Check" $true "Log directories test completed (may not be available in all versions)" -TestStartTime $testStart -TestCategory "Topic Management"
 }
 
 # Test 14: Cluster Information
 Write-Host "Retrieving cluster information..." -ForegroundColor Yellow
+$testStart = Get-Date
 $clusterInfoResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-broker-api-versions.sh" -Arguments @(
     "--bootstrap-server", "kafka:9092"
 )
 if ($clusterInfoResult.Success) {
-    Write-TestResult "Cluster Information" $true "Kafka cluster information retrieved" -ResponseData $clusterInfoResult.Output
+    Write-TestResult "Cluster Information" $true "Kafka cluster information retrieved" -ResponseData $clusterInfoResult.Output -TestStartTime $testStart -TestCategory "Connection"
 } else {
-    Write-TestResult "Cluster Information" $false -ErrorMessage $clusterInfoResult.Error
+    Write-TestResult "Cluster Information" $false -ErrorMessage $clusterInfoResult.Error -TestStartTime $testStart -TestCategory "Connection"
 }
 
 # Cleanup (unless skipped)
@@ -547,41 +662,40 @@ if ($successfulTests -eq $totalTests) {
     $TestResults.Summary = "Multiple test failures detected"
 }
 
-# Display summary
+# Display structured table summary
 Write-Host ""
 Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Cyan
-Write-Host "                        TEST SUMMARY                        " -ForegroundColor Cyan
+Write-Host "                   KAFKA SERVICE TEST REPORT                " -ForegroundColor Cyan
 Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Cyan
 
 Write-Host ""
+Write-Host "🎯 SERVICE OVERVIEW" -ForegroundColor Yellow
 Write-Host "Service: " -NoNewline
-Write-Host "Kafka" -ForegroundColor Blue
-
-Write-Host "Duration: " -NoNewline
+Write-Host "Apache Kafka" -ForegroundColor Blue
+Write-Host "Target: " -NoNewline  
+Write-Host "$KafkaHost`:$KafkaPort" -ForegroundColor Blue
+Write-Host "Total Duration: " -NoNewline
 Write-Host "$([math]::Round($TestResults.Duration.TotalSeconds, 1)) seconds" -ForegroundColor Blue
-
-Write-Host "Tests: " -NoNewline
-Write-Host "$successfulTests/$totalTests passed " -ForegroundColor $(if ($successfulTests -eq $totalTests) { "Green" } else { "Yellow" }) -NoNewline
-Write-Host "($successRate%)" -ForegroundColor $(if ($successRate -eq 100) { "Green" } elseif ($successRate -ge 50) { "Yellow" } else { "Red" })
-
-Write-Host "Status: " -NoNewline
+Write-Host "Overall Status: " -NoNewline
 $statusColor = switch ($TestResults.OverallStatus) {
     "SUCCESS" { "Green" }
-    "WARNING" { "Yellow" }
+    "WARNING" { "Yellow" }  
     "FAILURE" { "Red" }
     default { "Gray" }
 }
 Write-Host $TestResults.OverallStatus -ForegroundColor $statusColor
 
-Write-Host ""
-Write-Host $TestResults.Summary -ForegroundColor Gray
+# Display structured results table
+Write-TestResultsTable -Tests $TestResults.Tests -ServiceName "KAFKA"
 
+# Show failed tests if any
 if ($successfulTests -lt $totalTests) {
-    Write-Host ""
-    Write-Host "Failed Tests:" -ForegroundColor Red
+    Write-Host "❌ FAILED TESTS DETAILS" -ForegroundColor Red
     $failedTests = $TestResults.Tests | Where-Object { -not $_.Success }
     foreach ($test in $failedTests) {
-        Write-Host "  ✗ $($test.TestName): $($test.ErrorMessage)" -ForegroundColor Red
+        Write-Host "  ✗ $($test.TestName) ($($test.DurationSeconds)s) - $($test.Category)" -ForegroundColor Red
+        Write-Host "    Error: $($test.ErrorMessage)" -ForegroundColor Red
+        Write-Host ""
     }
 }
 
