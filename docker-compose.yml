@@ -339,20 +339,12 @@ volumes:
 
   zookeeper-logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${ZOOKEEPER_LOGS_PATH:-./zookeeper/logs}
   
   sqlserver-data:
     driver: local
 
   sqlserver-backup:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${SQLSERVER_BACKUP_PATH:-./sqlserver/backup}
 
   sqlserver-logs:
     driver: local
