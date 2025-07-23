@@ -23,7 +23,7 @@ x-healthcheck-defaults: &healthcheck-defaults
 services:
   elasticsearch:    
     container_name: artemis-elasticsearch
-    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-elasticsearch:${IMAGE_TAG:-latest}
+    image: ${REGISTRY_PREFIX:-tomas-rampas}/artemis-elasticsearch:${IMAGE_TAG:-latest}
     networks:
       artemis-network:
         aliases: 
@@ -52,7 +52,7 @@ services:
 
   kibana:
     container_name: artemis-kibana
-    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-kibana:${IMAGE_TAG:-latest}
+    image: ${REGISTRY_PREFIX:-tomas-rampas}/artemis-kibana:${IMAGE_TAG:-latest}
     networks:
       - artemis-network
     build:
@@ -86,7 +86,7 @@ services:
 
   elasticsearch-user-setup:
     container_name: artemis-elasticsearch-user-setup
-    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-elasticsearch-user-setup:${IMAGE_TAG:-latest}
+    image: ${REGISTRY_PREFIX:-tomas-rampas}/artemis-elasticsearch-user-setup:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: ./elasticsearch/UserSetup.Dockerfile 
@@ -161,7 +161,7 @@ services:
 
   mongodb:
     container_name: artemis-mongodb
-    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-mongodb:${IMAGE_TAG:-latest}
+    image: ${REGISTRY_PREFIX:-tomas-rampas}/artemis-mongodb:${IMAGE_TAG:-latest}
     networks:
       - artemis-network  
     build:
@@ -188,7 +188,7 @@ services:
     
   kafka:
     container_name: artemis-kafka
-    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-kafka:${IMAGE_TAG:-latest}
+    image: ${REGISTRY_PREFIX:-tomas-rampas}/artemis-kafka:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: ./kafka/Dockerfile
@@ -225,7 +225,7 @@ services:
 
   zookeeper:
     container_name: artemis-zookeeper 
-    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-zookeeper:${IMAGE_TAG:-latest}
+    image: ${REGISTRY_PREFIX:-tomas-rampas}/artemis-zookeeper:${IMAGE_TAG:-latest}
     networks:
       artemis-network:
         aliases: 
@@ -253,7 +253,7 @@ services:
 
   sqlserver:
     container_name: artemis-sqlserver 
-    image: ${REGISTRY_PREFIX:-tomasrampas}/artemis-sqlserver:${IMAGE_TAG:-latest}
+    image: ${REGISTRY_PREFIX:-tomas-rampas}/artemis-sqlserver:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: ./sqlserver/Dockerfile
@@ -300,10 +300,7 @@ volumes:
   # Service-specific data volumes
   elasticsearch-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${ELASTICSEARCH_DATA_PATH:-./elasticsearch/data} 
+
   elasticsearch-logs:
     driver: local
     driver_opts:
@@ -313,10 +310,7 @@ volumes:
   
   kibana-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${KIBANA_DATA_PATH:-./kibana/data}  
+
   kibana-logs:
     driver: local
     driver_opts:
@@ -326,16 +320,9 @@ volumes:
   
   mongodb-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MONGODB_DATA_PATH:-./mongodb/data}
+
   mongodb-configdb:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MONGODB_CONFIGDB_PATH:-./mongodb/configdb}
   
   kafka-data:
     driver: local
@@ -349,10 +336,6 @@ volumes:
   
   zookeeper-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${ZOOKEEPER_DATA_PATH:-./zookeeper/data}
 
   zookeeper-logs:
     driver: local
@@ -363,10 +346,6 @@ volumes:
   
   sqlserver-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${SQLSERVER_DATA_PATH:-./sqlserver/data}
 
   sqlserver-backup:
     driver: local
