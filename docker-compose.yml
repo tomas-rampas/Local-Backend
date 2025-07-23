@@ -339,10 +339,6 @@ volumes:
   
   kafka-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${KAFKA_DATA_PATH:-./kafka/data}
   
   kafka-logs:
     driver: local

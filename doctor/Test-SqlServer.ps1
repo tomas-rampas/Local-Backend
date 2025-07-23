@@ -127,12 +127,25 @@ function Invoke-SqlServerCommand {
             $result = & $dockerCommand[0] $dockerCommand[1..($dockerCommand.Length-1)] 2>&1
         } else {
             # Complex query - write to temp file and use bash
-            $tempFile = "/tmp/sqlserver_query_$(Get-Random).sql"
+            # Use PowerShell's temp directory which works cross-platform
+            $tempDir = [System.IO.Path]::GetTempPath()
+            $tempFileName = "sqlserver_query_$(Get-Random).sql"
+            $tempFile = Join-Path $tempDir $tempFileName
+            
+            # Write query to temp file
             $Query | Out-File -FilePath $tempFile -Encoding ASCII -NoNewline
             
-            $bashCommand = "cat '$tempFile' | docker-compose exec -T sqlserver /opt/mssql-tools/bin/sqlcmd -S $ServerHost,$ServerPort -U $Username -P '$Password' -d $Database -t $TimeoutSeconds"
+            # Use the correct path for bash command (convert Windows path if needed)
+            $bashTempFile = if ($IsWindows -or $env:OS -eq "Windows_NT") {
+                # On Windows/WSL, convert to Unix-style path
+                $tempFile -replace '\\', '/' -replace '^([A-Za-z]):', '/mnt/$1'
+            } else {
+                $tempFile
+            }
             
-            Write-Verbose "Executing complex query via temp file: $tempFile"
+            $bashCommand = "cat '$bashTempFile' | docker-compose exec -T sqlserver /opt/mssql-tools/bin/sqlcmd -S $ServerHost,$ServerPort -U $Username -P '$Password' -d $Database -t $TimeoutSeconds"
+            
+            Write-Verbose "Executing complex query via temp file: $tempFile (bash path: $bashTempFile)"
             try {
                 $result = bash -c $bashCommand 2>&1
             } finally {

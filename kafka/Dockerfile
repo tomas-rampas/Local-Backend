@@ -16,14 +16,9 @@ RUN groupadd -r kafka && \
     useradd -r -g kafka kafka && \
     chown -R kafka:kafka /opt/kafka
 
-# Create startup script that handles environment variables
-COPY kafka/start-kafka.sh /opt/kafka/start-kafka.sh
-RUN chmod +x /opt/kafka/start-kafka.sh && \
-    chown kafka:kafka /opt/kafka/start-kafka.sh
-
-# Copy entrypoint script
-COPY kafka/docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+# Copy unified startup script
+COPY kafka/kafka-startup.sh /kafka-startup.sh
+RUN chmod +x /kafka-startup.sh
 
 EXPOSE 9092 9093 9094
 
@@ -31,7 +26,7 @@ EXPOSE 9092 9093 9094
 # USER kafka
 
 # Set volumes
-VOLUME ["/var/lib/kafka/data"]
+# VOLUME ["/var/lib/kafka/data"]
 
-# Use entrypoint to fix permissions before starting
-ENTRYPOINT ["/docker-entrypoint.sh"]
+# Use the unified startup script
+ENTRYPOINT ["/kafka-startup.sh"]

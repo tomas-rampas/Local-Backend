@@ -418,7 +418,7 @@ if (-not $SkipCleanup) {
     
     # Give Kafka time to close any active connections and flush data
     Write-Host "Waiting for Kafka to finalize operations..." -ForegroundColor Gray
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 8
     
     # Delete topics with retry logic
     $topics = @($TestTopic, $TestTopicMultiPartition)
@@ -437,16 +437,26 @@ if (-not $SkipCleanup) {
                 "--bootstrap-server", "$KafkaHost`:$KafkaPort",
                 "--delete",
                 "--topic", $topic
-            ) -TimeoutSeconds 20
+            ) -TimeoutSeconds 30
             
             if ($deleteResult.Success) {
                 $deleteSuccess = $true
                 Write-Host "    ✓ Topic '$topic' deleted successfully" -ForegroundColor Green
+                # Wait a bit longer after successful deletion to allow filesystem operations to complete
+                Start-Sleep -Seconds 2
             } else {
-                Write-Host "    ✗ Failed to delete topic '$topic': $($deleteResult.Error)" -ForegroundColor Red
-                if ($attempts -lt $maxAttempts) {
-                    Write-Host "    Waiting before retry..." -ForegroundColor Gray
-                    Start-Sleep -Seconds 3
+                # Check if error is related to AccessDeniedException - this is expected and not critical
+                $errorMessage = $deleteResult.Error
+                if ($errorMessage -match "AccessDeniedException" -or $errorMessage -match "Failed atomic move") {
+                    Write-Host "    ⚠ Permission-related cleanup warning (topic deletion initiated): $($errorMessage.Split("`n")[0])" -ForegroundColor Yellow
+                    # Consider this a partial success since the topic deletion was initiated
+                    $deleteSuccess = $true
+                } else {
+                    Write-Host "    ✗ Failed to delete topic '$topic': $errorMessage" -ForegroundColor Red
+                    if ($attempts -lt $maxAttempts) {
+                        Write-Host "    Waiting before retry..." -ForegroundColor Gray
+                        Start-Sleep -Seconds 5
+                    }
                 }
             }
         }

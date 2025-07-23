@@ -322,7 +322,7 @@ $updateDoc = @{
     }
 }
 
-$updateResponse = Invoke-ElasticsearchRequest -Method "POST" -Endpoint "/$TestIndexName/_doc/test-doc-1/_update" -Body $updateDoc
+$updateResponse = Invoke-ElasticsearchRequest -Method "POST" -Endpoint "/$TestIndexName/_update/test-doc-1" -Body $updateDoc
 if ($updateResponse.Success) {
     Write-TestResult "Update Document" $true "Document updated successfully" -ResponseData $updateResponse.Data
 } else {
@@ -351,12 +351,38 @@ if ($countResponse.Success) {
 
 # Test 10: Bulk Operations
 Write-Host "Testing bulk operations..." -ForegroundColor Yellow
-$bulkData = @"
-{"index":{"_index":"$TestIndexName","_id":"bulk-doc-1"}}
-{"title":"Bulk Document 1","description":"Created via bulk API","tags":["bulk","test"],"created_date":"$(Get-Date -Format yyyy-MM-ddTHH:mm:ss)","priority":4,"metadata":{"author":"bulk-test","category":"bulk"}}
-{"index":{"_index":"$TestIndexName","_id":"bulk-doc-2"}}
-{"title":"Bulk Document 2","description":"Another bulk document","tags":["bulk","test"],"created_date":"$(Get-Date -Format yyyy-MM-ddTHH:mm:ss)","priority":5,"metadata":{"author":"bulk-test","category":"bulk"}}
-"@
+# Create bulk data with proper NDJSON formatting
+$currentTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ss"
+
+# Create bulk documents using hashtables and convert to JSON
+$bulkDoc1Index = @{ index = @{ _index = $TestIndexName; _id = "bulk-doc-1" } }
+$bulkDoc1Data = @{
+    title = "Bulk Document 1"
+    description = "Created via bulk API"
+    tags = @("bulk", "test")
+    created_date = $currentTime
+    priority = 4
+    metadata = @{ author = "bulk-test"; category = "bulk" }
+}
+
+$bulkDoc2Index = @{ index = @{ _index = $TestIndexName; _id = "bulk-doc-2" } }
+$bulkDoc2Data = @{
+    title = "Bulk Document 2"
+    description = "Another bulk document"
+    tags = @("bulk", "test")
+    created_date = $currentTime
+    priority = 5
+    metadata = @{ author = "bulk-test"; category = "bulk" }
+}
+
+# Convert to NDJSON format
+$bulkLines = @(
+    ($bulkDoc1Index | ConvertTo-Json -Compress),
+    ($bulkDoc1Data | ConvertTo-Json -Compress),
+    ($bulkDoc2Index | ConvertTo-Json -Compress),
+    ($bulkDoc2Data | ConvertTo-Json -Compress)
+)
+$bulkData = ($bulkLines -join "`n") + "`n"
 
 $bulkResponse = Invoke-ElasticsearchRequest -Method "POST" -Endpoint "/_bulk" -Body $bulkData -Headers @{"Content-Type" = "application/x-ndjson"}
 if ($bulkResponse.Success) {

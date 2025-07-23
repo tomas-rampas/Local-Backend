@@ -62,3 +62,5 @@ sqlserver/logs/
 !sqlserver/logs/.gitkeep
 shared/
 !shared/.gitkeep
+.claude/
+CLAUDE.md

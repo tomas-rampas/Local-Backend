@@ -91,13 +91,36 @@ function Invoke-MongoCommand {
     )
     
     try {
-        # Build the mongo connection string and command
-        $connectionString = "mongodb://$MongoHost`:$MongoPort/$DatabaseName"
-        
-        # Use docker exec to run mongo commands
-        $mongoCommand = "docker-compose exec -T mongodb mongosh --quiet --eval `"$Command`""
-        
-        $result = Invoke-Expression $mongoCommand 2>&1
+        # For complex commands with JSON, write to a temp file to avoid shell escaping issues
+        if ($Command.Length -gt 200 -or $Command.Contains('[') -or $Command.Contains('{')) {
+            # Use PowerShell's temp directory which works cross-platform
+            $tempDir = [System.IO.Path]::GetTempPath()
+            $tempFileName = "mongo_query_$(Get-Random).js"
+            $tempFile = Join-Path $tempDir $tempFileName
+            
+            # Write command to temp file
+            $Command | Out-File -FilePath $tempFile -Encoding UTF8 -NoNewline
+            
+            # Use the correct path for bash command (convert Windows path if needed)
+            $bashTempFile = if ($IsWindows -or $env:OS -eq "Windows_NT") {
+                # On Windows/WSL, convert to Unix-style path
+                $tempFile -replace '\\', '/' -replace '^([A-Za-z]):', '/mnt/$1'
+            } else {
+                $tempFile
+            }
+            
+            try {
+                $result = bash -c "cat '$bashTempFile' | docker-compose exec -T mongodb mongosh --quiet" 2>&1
+            } finally {
+                if (Test-Path $tempFile) {
+                    Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } else {
+            # Simple command - use direct execution
+            $mongoCommand = "docker-compose exec -T mongodb mongosh --quiet --eval `"$Command`""
+            $result = Invoke-Expression $mongoCommand 2>&1
+        }
         
         if ($LASTEXITCODE -eq 0) {
             return @{
@@ -107,7 +130,11 @@ function Invoke-MongoCommand {
         } else {
             return @{
                 Success = $false
-                Error = if ($result) { $result -join "`n" } else { "Command failed with exit code $LASTEXITCODE" }
+                Error = if ($result) { 
+                    if ($result -is [array]) { $result -join "`n" } else { $result.ToString() }
+                } else { 
+                    "Command failed with exit code $LASTEXITCODE" 
+                }
             }
         }
     }
@@ -178,7 +205,7 @@ $testDocuments = @'
     "email": "john.doe@artemis.dev",
     "age": 30,
     "department": "Engineering",
-    "joined_date": new Date("2023-01-15"),
+    "joined_date": "2023-01-15T00:00:00Z",
     "skills": ["JavaScript", "Python", "Docker"],
     "active": true,
     "salary": 85000,
@@ -192,7 +219,7 @@ $testDocuments = @'
     "email": "jane.smith@artemis.dev", 
     "age": 28,
     "department": "DevOps",
-    "joined_date": new Date("2023-03-10"),
+    "joined_date": "2023-03-10T00:00:00Z",
     "skills": ["Kubernetes", "AWS", "MongoDB"],
     "active": true,
     "salary": 90000,
@@ -205,7 +232,7 @@ $testDocuments = @'
     "email": "bob.johnson@artemis.dev",
     "age": 35,
     "department": "Engineering", 
-    "joined_date": new Date("2022-11-20"),
+    "joined_date": "2022-11-20T00:00:00Z",
     "skills": ["Java", "Spring", "Elasticsearch"],
     "active": false,
     "salary": 95000,
@@ -216,7 +243,7 @@ $testDocuments = @'
     "email": "alice.brown@artemis.dev",
     "age": 26,
     "department": "Data Science",
-    "joined_date": new Date("2023-06-01"),
+    "joined_date": "2023-06-01T00:00:00Z",
     "skills": ["Python", "Machine Learning", "SQL"],
     "active": true,
     "salary": 80000,
@@ -266,7 +293,7 @@ if ($queryResult.Success) {
 
 # Test 8: Range Query
 Write-Host "Testing range queries..." -ForegroundColor Yellow
-$rangeQuery = "use $Database; db.$CollectionName.find({age: {\`$gte: 25, \`$lte: 32}})"
+$rangeQuery = "use $Database; db.$CollectionName.find({age: {`${'$'}gte: 25, `${'$'}lte: 32}})"
 $rangeQueryResult = Invoke-MongoCommand -Command $rangeQuery
 if ($rangeQueryResult.Success) {
     Write-TestResult "Range Query" $true "Age range query (25-32) executed successfully" -ResponseData $rangeQueryResult.Output
@@ -285,7 +312,7 @@ if ($arrayQueryResult.Success) {
 
 # Test 10: Update Operations
 Write-Host "Testing document updates..." -ForegroundColor Yellow
-$updateQuery = "use $Database; db.$CollectionName.updateOne({name: 'John Doe'}, {\`$set: {age: 31, last_updated: new Date()}})"
+$updateQuery = "use $Database; db.$CollectionName.updateOne({name: 'John Doe'}, {`${'$'}set: {age: 31, last_updated: '$(Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")'}})"
 $updateResult = Invoke-MongoCommand -Command $updateQuery
 if ($updateResult.Success) {
     Write-TestResult "Update Document" $true "Document updated successfully" -ResponseData $updateResult.Output
@@ -295,21 +322,16 @@ if ($updateResult.Success) {
 
 # Test 11: Aggregation Pipeline
 Write-Host "Testing aggregation pipeline..." -ForegroundColor Yellow
-$aggregationQuery = @'
-use DBNAME; db.COLLECTION.aggregate([
-  {
-    $group: {
-      _id: "$department",
-      count: { $sum: 1 },
-      avgAge: { $avg: "$age" },
-      avgSalary: { $avg: "$salary" }
-    }
-  },
-  {
-    $sort: { count: -1 }
-  }
-])
-'@ -replace 'DBNAME', $Database -replace 'COLLECTION', $CollectionName
+# Build aggregation query with proper escaping
+$aggregationQuery = "use $Database; db.$CollectionName.aggregate([" +
+    "{" + "`${'$'}group: {" + 
+        "_id: `"`${'$'}department`", " +
+        "count: { `${'$'}sum: 1 }, " +
+        "avgAge: { `${'$'}avg: `"`${'$'}age`" }, " +
+        "avgSalary: { `${'$'}avg: `"`${'$'}salary`" }" +
+    "}}, " +
+    "{" + "`${'$'}sort: { count: -1 }" + "}" +
+"])"
 
 $aggregationResult = Invoke-MongoCommand -Command $aggregationQuery
 if ($aggregationResult.Success) {
@@ -340,7 +362,7 @@ if ($listIndexResult.Success) {
 Write-Host "Testing text search..." -ForegroundColor Yellow
 $createTextIndexResult = Invoke-MongoCommand -Command "use $Database; db.$CollectionName.createIndex({name: 'text', skills: 'text'})"
 if ($createTextIndexResult.Success) {
-    $textSearchQuery = "use $Database; db.$CollectionName.find({\`$text: {\`$search: 'Python'}})"
+    $textSearchQuery = "use $Database; db.$CollectionName.find({`${'$'}text: {`${'$'}search: 'Python'}})"
     $textSearchResult = Invoke-MongoCommand -Command $textSearchQuery
     if ($textSearchResult.Success) {
         Write-TestResult "Text Search" $true "Text search executed successfully" -ResponseData $textSearchResult.Output

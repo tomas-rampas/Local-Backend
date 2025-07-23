@@ -105,6 +105,11 @@ function Invoke-KibanaRequest {
             "kbn-xsrf" = "true"  # Required for Kibana API calls
         }
         
+        # Add authentication header - use basic auth with Elasticsearch credentials
+        $credPair = "$($ElasticsearchUsername):$($ElasticsearchPassword)"
+        $encodedCreds = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($credPair))
+        $defaultHeaders["Authorization"] = "Basic $encodedCreds"
+        
         # Merge headers
         foreach ($key in $Headers.Keys) {
             $defaultHeaders[$key] = $Headers[$key]
