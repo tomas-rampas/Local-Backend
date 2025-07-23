@@ -556,6 +556,108 @@ deploy:
 - Use external volumes for data persistence
 - Configure proper backup strategies
 
+## 🔧 Test Script Fixes and Improvements
+
+### Known Issues Resolved
+
+#### MongoDB Test Script Issues
+**Problem**: "Cannot index into a null array" errors
+**Solution**: Added null-safe array operations and safe counting:
+```powershell
+# Safe array operations
+$countMatches = $countResult.Output -split "`n" | Where-Object { $_ -match '^\d+$' }
+$count = if ($countMatches) { $countMatches[0] } else { "0" }
+
+# Safe join operations  
+$error = if ($result) { $result -join "`n" } else { "Command failed with exit code $LASTEXITCODE" }
+```
+
+#### SQL Server Test Script Issues
+**Problem**: Complex SQL queries with nested quotes causing parsing failures
+**Solution**: Implemented temporary file method for complex queries:
+```powershell
+# Temporary file approach for complex queries
+if ($Query) {
+    $tempFile = [System.IO.Path]::GetTempFileName()
+    $Query | Out-File -FilePath $tempFile -Encoding ASCII
+    $dockerCommand = "cat '$tempFile' | docker-compose exec -T sqlserver /opt/mssql-tools/bin/sqlcmd -S $ServerHost,$ServerPort -U $Username -P '$Password' -d $Database -t $TimeoutSeconds"
+}
+```
+
+#### Kafka Test Script Issues
+**Problem**: AccessDeniedException during topic deletion and cleanup failures
+**Solution**: Added retry logic with proper wait times:
+```powershell
+# Enhanced cleanup with retry logic
+Write-Host "Waiting for Kafka to finalize operations..." -ForegroundColor Gray
+Start-Sleep -Seconds 8
+
+foreach ($topic in $topics) {
+    $attempts = 0
+    $maxAttempts = 3
+    while ($attempts -lt $maxAttempts -and -not $deleteSuccess) {
+        $attempts++
+        # Attempt deletion with timeout and retry
+        $deleteResult = Invoke-KafkaCommand -TimeoutSeconds 30
+        if ($deleteResult.Success) {
+            $deleteSuccess = $true
+        } else {
+            Start-Sleep -Seconds 5  # Wait before retry
+        }
+    }
+}
+```
+
+### General Improvements Applied
+
+#### Error Handling Patterns
+All test scripts now follow consistent error handling:
+- **Null-safe operations**: Always check for null before array operations
+- **Explicit error handling**: Provide meaningful error messages  
+- **Resource cleanup**: Proper cleanup of temporary files and resources
+- **Timeout handling**: Prevent hanging operations
+- **Retry logic**: Handle transient failures gracefully
+
+#### Cross-Platform Compatibility
+- **File path handling**: Use cross-platform compatible methods
+- **Command escaping**: Proper escaping for different shells
+- **Temporary file handling**: Safe creation and cleanup of temp files
+
+### Testing the Fixes
+
+Before running tests:
+```bash
+# Ensure all containers are running
+docker-compose ps
+
+# Wait for services to fully initialize (30-60 seconds)
+sleep 60
+
+# Check logs for any startup issues
+docker-compose logs
+```
+
+Run individual service tests:
+```bash
+# Test each service individually
+pwsh ./doctor/Test-MongoDB.ps1
+pwsh ./doctor/Test-SqlServer.ps1  
+pwsh ./doctor/Test-Kafka.ps1
+pwsh ./doctor/Test-Elasticsearch.ps1
+```
+
+Run complete test suite:
+```bash
+# Run full test suite
+pwsh ./doctor/Run-AllTests.ps1
+
+# Run with verbose output for debugging
+pwsh ./doctor/Run-AllTests.ps1 -Verbose
+
+# Run with cleanup skipped to inspect test data
+pwsh ./doctor/Run-AllTests.ps1 -SkipCleanup
+```
+
 ## 📊 Monitoring and Logging
 
 ### Log Locations
