@@ -214,9 +214,12 @@ services:
       KAFKA_SSL_KEYSTORE_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
       KAFKA_SSL_TRUSTSTORE_LOCATION: /certs/kafka/kafka.truststore.jks
       KAFKA_SSL_TRUSTSTORE_PASSWORD: ${LOCAL_BACKEND_BOOTSTRAP_PASSWORD}
+      # JVM Performance Configuration
+      KAFKA_HEAP_OPTS: "-Xmx1536m -Xms1536m"
+      KAFKA_JVM_PERFORMANCE_OPTS: "-XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+DisableExplicitGC"
     volumes:
-      - kafka-data:/var/lib/kafka/data:rw
-      - kafka-logs:/opt/kafka/logs:rw
+      - kafka-data:/var/lib/kafka/data:rw,delegated
+      - kafka-logs:/opt/kafka/logs:rw,delegated
       - ./certs:/certs:ro
     healthcheck:
       <<: *healthcheck-defaults

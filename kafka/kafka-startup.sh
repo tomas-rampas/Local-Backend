@@ -53,6 +53,14 @@ set -e
 # Ensure umask is consistent with root settings (allow group write)
 umask 002
 
+# Export JVM options if set
+if [ -n "$KAFKA_HEAP_OPTS" ]; then
+    export KAFKA_HEAP_OPTS
+fi
+if [ -n "$KAFKA_JVM_PERFORMANCE_OPTS" ]; then
+    export KAFKA_JVM_PERFORMANCE_OPTS
+fi
+
 # Wait for ZooKeeper to be available
 echo "Waiting for ZooKeeper to be available..."
 ZK_HOST=$(echo $KAFKA_ZOOKEEPER_CONNECT | cut -d: -f1)
@@ -81,22 +89,38 @@ advertised.listeners=${KAFKA_ADVERTISED_LISTENERS}
 listener.security.protocol.map=${KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}
 inter.broker.listener.name=${KAFKA_INTER_BROKER_LISTENER_NAME}
 
-# Log settings
-num.network.threads=3
+# Performance optimizations
+num.network.threads=8
 num.io.threads=8
-socket.send.buffer.bytes=102400
-socket.receive.buffer.bytes=102400
+socket.send.buffer.bytes=1048576
+socket.receive.buffer.bytes=1048576
 socket.request.max.bytes=104857600
+
+# Compression
+compression.type=lz4
+min.compressible.fetch.rate=1000
+
+# Replication performance
+num.replica.fetchers=4
+replica.fetch.max.bytes=1048576
+replica.fetch.wait.max.ms=500
 
 # Log retention
 log.retention.hours=168
 log.segment.bytes=1073741824
 log.retention.check.interval.ms=300000
 
-# Log cleanup settings to prevent shutdown on directory failures
-log.cleaner.enable=false
+# Enable log cleaner for compaction
+log.cleaner.enable=true
+log.cleaner.threads=2
+log.cleaner.io.buffer.size=524288
 log.cleanup.policy=delete
 log.retention.ms=604800000
+
+# Producer defaults for better batching
+producer.linger.ms=100
+producer.batch.size=32768
+producer.buffer.memory=67108864
 
 # Prevent broker shutdown on log directory failures - more robust settings
 log.dir.failure.timeout.ms=60000
@@ -127,6 +151,30 @@ transaction.state.log.min.isr=1
 
 # Group coordinator settings
 group.initial.rebalance.delay.ms=0
+
+# Consumer performance settings
+fetch.min.bytes=1
+fetch.max.wait.ms=500
+max.poll.records=500
+max.poll.interval.ms=300000
+
+# Request timeout settings
+request.timeout.ms=30000
+replica.lag.time.max.ms=10000
+
+# Consumer fetch settings
+replica.fetch.min.bytes=1
+replica.fetch.wait.max.ms=500
+
+# Session timeout for consumers
+group.min.session.timeout.ms=6000
+group.max.session.timeout.ms=300000
+
+# Reduce metadata refresh interval for faster topic discovery
+metadata.max.age.ms=300000
+
+# Network request settings
+connections.max.idle.ms=540000
 EOL
 
 # Add SSL configuration if keystore exists

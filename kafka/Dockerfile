@@ -16,6 +16,13 @@ RUN groupadd -r kafka && \
     useradd -r -g kafka kafka && \
     chown -R kafka:kafka /opt/kafka
 
+# Optimize OS settings for Kafka performance
+RUN echo "vm.swappiness=1" >> /etc/sysctl.conf && \
+    echo "net.core.somaxconn=1024" >> /etc/sysctl.conf && \
+    echo "net.ipv4.tcp_max_syn_backlog=1024" >> /etc/sysctl.conf && \
+    echo "net.core.netdev_max_backlog=2000" >> /etc/sysctl.conf && \
+    echo "net.ipv4.tcp_fin_timeout=30" >> /etc/sysctl.conf
+
 # Copy unified startup script
 COPY kafka/kafka-startup.sh /kafka-startup.sh
 RUN chmod +x /kafka-startup.sh

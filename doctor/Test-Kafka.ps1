@@ -63,6 +63,29 @@ function Write-TestResultsTable {
     # Group tests by category
     $testsByCategory = $Tests | Group-Object Category | Sort-Object Name
     
+    # Debug: Show test distribution and check for anomalies
+    foreach ($cat in $testsByCategory) {
+        # Try different filtering approaches to see what's causing the issue
+        $successfulTests = @($cat.Group | Where-Object { $_.Success -eq $true })
+        $successfulInCategory = $successfulTests.Count
+        $totalInCategory = $cat.Count
+        
+        
+        if ($successfulInCategory -gt $totalInCategory) {
+            Write-Host "⚠️  ERROR: Category with impossible success count found!" -ForegroundColor Red
+            Write-Host "    Tests in this category:" -ForegroundColor Yellow
+            $cat.Group | ForEach-Object { 
+                Write-Host "      - $($_.TestName)" -ForegroundColor Gray
+                Write-Host "        Success: $($_.Success) (Type: $($_.Success.GetType().Name))" -ForegroundColor Gray
+                if ($_.Success -is [Array]) {
+                    Write-Host "        Success is an array with $($_.Success.Count) elements!" -ForegroundColor Red
+                    Write-Host "        Array contents: $($_.Success -join ', ')" -ForegroundColor Red
+                }
+                Write-Host "        Raw Success value when filtered: $(($cat.Group | Where-Object { $_.TestName -eq $_.TestName -and $_.Success -eq $true}).Count)" -ForegroundColor Red
+            }
+        }
+    }
+    
     # Calculate column widths
     $maxCategoryWidth = ($testsByCategory.Name | Measure-Object -Maximum Length).Maximum
     $maxCategoryWidth = [Math]::Max($maxCategoryWidth, 15)
@@ -93,7 +116,7 @@ function Write-TestResultsTable {
     # Category rows
     foreach ($category in $testsByCategory) {
         $categoryTests = $category.Group
-        $categoryPassed = ($categoryTests | Where-Object { $_.Success }).Count
+        $categoryPassed = @($categoryTests | Where-Object { $_.Success -eq $true }).Count
         $categoryTotal = $categoryTests.Count
         $categoryRate = if ($categoryTotal -gt 0) { [math]::Round(($categoryPassed / $categoryTotal) * 100, 0) } else { 0 }
         $categoryAvgTime = if ($categoryTests.Count -gt 0) { 
@@ -116,7 +139,7 @@ function Write-TestResultsTable {
     }
     
     # Total row
-    $totalPassed = ($Tests | Where-Object { $_.Success }).Count
+    $totalPassed = @($Tests | Where-Object { $_.Success -eq $true }).Count
     $totalTests = $Tests.Count
     $totalRate = if ($totalTests -gt 0) { [math]::Round(($totalPassed / $totalTests) * 100, 0) } else { 0 }
     $totalAvgTime = if ($Tests.Count -gt 0) { 
@@ -468,8 +491,10 @@ $consumeResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-console-cons
     "--topic", $TestTopic,
     "--from-beginning",
     "--max-messages", "10",
-    "--timeout-ms", "60000"
-) -TimeoutSeconds 80
+    "--timeout-ms", "5000",
+    "--consumer-property", "fetch.min.bytes=1",
+    "--consumer-property", "fetch.max.wait.ms=500"
+) -TimeoutSeconds 10
 
 if ($consumeResult.Success) {
     $consumedMessages = ($consumeResult.Output | Where-Object { $_ -match '\w+' }).Count
@@ -517,8 +542,10 @@ $consumerGroupResult = Invoke-KafkaCommand -Command "/opt/kafka/bin/kafka-consol
     "--topic", $TestTopicMultiPartition,
     "--group", $consumerGroupId,
     "--max-messages", "3",
-    "--timeout-ms", "60000"
-) -TimeoutSeconds 80
+    "--timeout-ms", "5000",
+    "--consumer-property", "fetch.min.bytes=1",
+    "--consumer-property", "fetch.max.wait.ms=500"
+) -TimeoutSeconds 10
 
 if ($consumerGroupResult.Success) {
     Write-TestResult "Consumer Group Test" $true "Consumer group '$consumerGroupId' created and consumed messages" -ResponseData @{GroupId = $consumerGroupId; Output = $consumerGroupResult.Output} -TestStartTime $testStart -TestCategory "Message Operations"
@@ -638,12 +665,12 @@ if (-not $SkipCleanup) {
     $totalTopics = $topics.Count
     
     if ($successfulDeletions -eq $totalTopics) {
-        Write-TestResult "Cleanup Test Topics" $true "All test topics deleted successfully"
+        Write-TestResult "Cleanup Test Topics" $true "All test topics deleted successfully" -TestCategory "Cleanup"
     } elseif ($successfulDeletions -gt 0) {
-        Write-TestResult "Cleanup Test Topics" $true "Partial cleanup: $successfulDeletions/$totalTopics topics deleted"
+        Write-TestResult "Cleanup Test Topics" $true "Partial cleanup: $successfulDeletions/$totalTopics topics deleted" -TestCategory "Cleanup"
         Write-Host "    Note: Some topics may still exist due to Kafka internal cleanup delays" -ForegroundColor Yellow
     } else {
-        Write-TestResult "Cleanup Test Topics" $false -ErrorMessage "Failed to delete test topics - they may be cleaned up automatically by Kafka"
+        Write-TestResult "Cleanup Test Topics" $false -ErrorMessage "Failed to delete test topics - they may be cleaned up automatically by Kafka" -TestCategory "Cleanup"
         Write-Host "    Note: Topics will be automatically cleaned up by Kafka's background processes" -ForegroundColor Yellow
     }
 } else {
@@ -656,7 +683,7 @@ if (-not $SkipCleanup) {
 # Calculate results
 $TestResults.EndTime = Get-Date
 $TestResults.Duration = $TestResults.EndTime - $TestResults.StartTime
-$successfulTests = ($TestResults.Tests | Where-Object { $_.Success }).Count
+$successfulTests = @($TestResults.Tests | Where-Object { $_.Success -eq $true }).Count
 $totalTests = $TestResults.Tests.Count
 $successRate = [math]::Round(($successfulTests / $totalTests) * 100, 1)
 
@@ -701,7 +728,7 @@ Write-TestResultsTable -Tests $TestResults.Tests -ServiceName "KAFKA"
 # Show failed tests if any
 if ($successfulTests -lt $totalTests) {
     Write-Host "❌ FAILED TESTS DETAILS" -ForegroundColor Red
-    $failedTests = $TestResults.Tests | Where-Object { -not $_.Success }
+    $failedTests = @($TestResults.Tests | Where-Object { $_.Success -ne $true })
     foreach ($test in $failedTests) {
         Write-Host "  ✗ $($test.TestName) ($($test.DurationSeconds)s) - $($test.Category)" -ForegroundColor Red
         Write-Host "    Error: $($test.ErrorMessage)" -ForegroundColor Red
